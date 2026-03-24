@@ -94,6 +94,10 @@ Jeder Contribution hilft, die "Factory" für alle zu verbessern. 🚀
 
 **Made with ❤️ for the IPTV community**
 
+⚠️ NOT FOR SALE - Free for private use only!
+
+Legal: This tool is intended for streaming your own media files. 
+Do not distribute copyrighted content. Private/non-commercial use only.
 
 
 📄 Lizenz
