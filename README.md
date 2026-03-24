@@ -66,6 +66,36 @@ PICONS_ROOT = "/srv/media_hdd/picons"              # Logos hier ablegen
 sudo cp tv_factory.py /usr/local/bin/
 sudo chmod +x /usr/local/bin/tv_factory.py
 
+
+## 🤝 Mitmachen & Verbessern
+
+Dieses Projekt ist ein **Work in Progress** – und ich freue mich über jeden, der mit anpackt!
+
+Besonders willkommen sind:
+- **Optimierungen für sämtliche IPTV Apps)
+- **Neue Features** (EPG-Verbesserungen, Web-Interface, Docker-Support)
+- **Performance-Tuning** (schnelleres Scannen, weniger CPU-Last)
+- **Bugfixes** (für verschiedene Client-Apps, Enigma2, etc.)
+
+### Wie du mitmachen kannst:
+
+1. **Verbessere den Code** in deinem Fork
+2. **Teste** neue Lösungen (besonders mit MyTVOnline3, TiviMate, VLC)
+3. **Teile deine Ergebnisse** als Pull Request oder Issue
+
+> 💡 **Ich würde mich freuen**, wenn wir gemeinsam dieses Tool perfektionieren können!  
+> Hast du eine Idee, wie der Film-Wechsel flüssiger läuft?  
+> Eine bessere EPG-Berechnung?  
+> Einfach loslegen und das verbesserte Skript hier einreichen!
+
+Jeder Contribution hilft, die "Factory" für alle zu verbessern. 🚀
+
+---
+
+**Made with ❤️ for the IPTV community**
+
+
+
 📄 Lizenz
 GPL-3.0 - Frei verwendbar für private Projekte.
 🙏 Credits
