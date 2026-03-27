@@ -526,14 +526,28 @@ def fetch_tmdb_tv(name: str):
 
 def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
     try:
+        # 1) Episode-Basisdaten
         url = f"https://api.themoviedb.org/3/tv/{tmdb_id}/season/{season}/episode/{episode}"
         params = {"api_key": TMDB_API_KEY, "language": TMDB_LANG}
         data = requests.get(url, params=params, timeout=10).json()
+
+        # 2) Credits extra holen
+        credits_url = f"https://api.themoviedb.org/3/tv/{tmdb_id}/season/{season}/episode/{episode}/credits"
+        credits = requests.get(credits_url, params=params, timeout=10).json()
+
+        crew_names = []
+        for item in credits.get("crew", []):
+            name = str(item.get("name", "")).strip()
+            if name and name not in crew_names:
+                crew_names.append(name)
+
+        crew_string = ", ".join(crew_names[:5])
 
         return {
             "title": data.get("name", "") or "",
             "plot": data.get("overview", "") or "",
             "air_date": data.get("air_date", "") or "",
+            "crew": crew_string,
         }
     except Exception:
         return None
@@ -806,7 +820,7 @@ while true; do
    # ---- START LOG ----
    echo "START file=$file expected=${{dur}}s at=$(date '+%F %T')" >> "/var/log/ffmpeg_${{CHANNEL_ID}}.log"
 
-/usr/bin/ffmpeg -hide_banner -loglevel error -re -i "$file" \\
+/usr/bin/ffmpeg -hide_banner -loglevel quiet -re -i "$file" \\
     -map 0:v:0 -map 0:a:0 \\
     -c:v copy -c:a aac -ac 2 -b:a 192k \\
     -f hls -hls_time 6 -hls_list_size 8 \\
@@ -1120,6 +1134,27 @@ def ensure_system_deps() -> None:
     else:
         print("[DEPS] php-fpm: vorhanden (binary gefunden)")
 
+    # php sqlite extension + sqlite3 cli
+    php_sqlite_ok = False
+    try:
+        modcheck = subprocess.run(
+            ["php", "-m"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        mods = modcheck.stdout.lower()
+        php_sqlite_ok = ("pdo_sqlite" in mods) or ("sqlite3" in mods)
+    except Exception:
+        php_sqlite_ok = False
+
+    if not php_sqlite_ok:
+        print("[DEPS] php8.2-sqlite3/sqlite3 fehlt -> wird installiert")
+        packages += ["php8.2-sqlite3", "sqlite3"]
+        need_install = True
+    else:
+        print("[DEPS] php-sqlite/sqlite3: vorhanden")
+
     # python requests (TMDB API)
     try:
        import requests # type: ignore
@@ -1419,6 +1454,15 @@ header("Content-Type: application/json; charset=UTF-8");
 ini_set("display_errors","0");
 error_reporting(0);
 
+$log = date("Y-m-d H:i:s") .
+    " action=" . ($_GET["action"] ?? "none") .
+    " user=" . ($_GET["username"] ?? "") .
+    " uri=" . ($_SERVER["REQUEST_URI"] ?? "") .
+    " GET=" . json_encode($_GET) .
+    PHP_EOL;
+
+file_put_contents("/tmp/factory_player_api.log", $log, FILE_APPEND);
+
 $cfg = require __DIR__ . "/config.php";
 
 function out($x) {
@@ -1612,24 +1656,28 @@ function distinctCats(PDO $pdo, string $table, string $col): array {
 if ($action === "" || $action === "user_info" || $action === "auth") {
   out([
     "user_info" => [
-      "auth" => 1,
-      "status" => "Active",
-      "username" => (string)($cfg["user"] ?? ""),
-      "password" => (string)($cfg["pass"] ?? ""),
-      "exp_date" => null,
-      "is_trial" => 0,
-      "active_cons" => 1,
-      "created_at" => time(),
-      "max_connections" => 10,
-      "allowed_output_formats" => ["m3u8","ts","mp4","mkv"]
+        "auth" => 1,
+        "status" => "Active",
+        "username" => (string)($cfg["user"] ?? ""),
+        "password" => (string)($cfg["pass"] ?? ""),
+        "message" => "",
+        "exp_date" => "",
+        "is_trial" => "0",
+        "active_cons" => "1",
+        "created_at" => (string)time(),
+        "max_connections" => "10",
+        "allowed_output_formats" => ["m3u8","ts","mp4","mkv"]
     ],
     "server_info" => [
-      "url" => "__SERVER_IP__",
-      "port" => "__VOD_PORT__",
-      "https_port" => "",
-      "server_protocol" => "http",
-      "timezone" => "Europe/Vienna",
-      "timestamp_now" => time()
+        "url" => "__SERVER_IP__",
+        "port" => "__VOD_PORT__",
+        "https_port" => "443",
+        "server_protocol" => "http",
+        "rtmp_port" => "25462",
+        "timezone" => "Europe/Vienna",
+        "timestamp_now" => (string)time(),
+        "time_now" => date("Y-m-d H:i:s"),
+        "process" => true
     ]
   ]);
 }
@@ -1733,12 +1781,12 @@ if ($action === "get_live_streams") {
 if ($action === "get_vod_categories") {
   // Nur eine Kategorie: Movies (ID 0)
   out([
-    ["category_id"=>"0","category_name"=>"Movies","parent_id"=>0]
+    ["category_id"=>"1","category_name"=>"Movies","parent_id"=>0]
   ]);
 }
 
 if ($action === "get_vod_streams") {
-  $categoryId = (string)($_GET["category_id"] ?? "0");
+  $categoryId = (string)($_GET["category_id"] ?? "1");
 
   $ok = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='vod'")->fetch();
   if (!$ok) out([]);
@@ -1751,14 +1799,14 @@ if ($action === "get_vod_streams") {
   $where = "";
   $params = [];
   $outCatId = "0";
-  if ($categoryId !== "0" && isset($catMap[$categoryId])) {
+  if ($categoryId !== "1" && isset($catMap[$categoryId])) {
     $where = "WHERE COALESCE(NULLIF(TRIM(cat),''),'Unsorted') = :c";
     $params[":c"] = $catMap[$categoryId];
     $outCatId = $categoryId;
   }
 
   // FIX: include path so extOf() works
-  $sql = "SELECT id, kinopoisk_url, tmdb_id, title, o_name, poster, path, COALESCE(NULLIF(TRIM(cat),''),'Unsorted') AS cat, `cast`, `trailer`
+  $sql = "SELECT id, kinopoisk_url, tmdb_id, title, o_name, backdrop, plot, `cast`, director, genre, release_date, rating, poster, path, COALESCE(NULLIF(TRIM(cat),''),'Unsorted') AS cat, `cast`, `trailer`
           FROM vod $where
           ORDER BY id DESC";
   $st = $pdo->prepare($sql);
@@ -1768,21 +1816,36 @@ if ($action === "get_vod_streams") {
   $outStreams = [];
   $n=1;
   foreach ($rows as $r) {
+
+      $castArray = json_decode((string)($r["cast"] ?? "[]"), true);
+      if (!is_array($castArray)) $castArray = [];
+
+      $names = [];
+      foreach ($castArray as $actor) {
+          if (!empty($actor["name"])) {
+              $names[] = $actor["name"];
+          }
+      }
+
+    $namesString = implode(", ", $names);
+
     $ext = extOf((string)($r["path"] ?? ""), "mp4");
     $streamId = (int)$r["id"];
     $direct = $base . "/movie/$user/$pass/$streamId.$ext";
     $outStreams[] = [
       "num" => $n++,
-      "kinopoisk_url" => (string)($r["kinopoisk_url"] ?? ""),
-      "tmdb_id" => (string)($r["tmdb_id"] ?? ""),
       "name" => (string)$r["title"],
-      "o_name" => (string)($r["o_name"] ?? ""),
+      "stream_type" => "movie",
       "stream_id" => $streamId,
       "stream_icon" => (string)($r["poster"] ?? ""),
-      "category_id" => "0",
+      "rating" => isset($r["rating"]) ? (float)$r["rating"] : 0.0,
+      "rating_5based" => (string)round(((float)($r["rating"] ?? 0)) / 2, 1),
+      "tmdb" => (string)($r["tmdb_id"] ?? ""),
+      "trailer" => "",
       "added" => (string)time(),
+      "is_adult" => "0",
+      "category_id" => "1",
       "container_extension" => $ext,
-      "stream_type" => "movie",
       "direct_source" => $direct
     ];
   }
@@ -1822,8 +1885,11 @@ if ($action === "get_vod_info") {
       "name" => (string)$r["title"],
       "o_name" => (string)($r["o_name"] ?? ""),
       "cover_big" => (string)($r["poster"] ?? ""),
+      "cover" => (string)($r["poster"] ?? ""),
       "movie_image" => (string)($r["poster"] ?? ""),
       "releasedate" => (string)($r["release_date"] ?? ""),
+      "releaseDate" => (string)($r["release_date"] ?? ""),
+      "release_date" => (string)($r["release_date"] ?? ""),
       "youtube_trailer" => (string)($r["trailer"] ?? ""),
       "director" => (string)($r["director"] ?? ""),
       "actors" => $namesString,
@@ -1831,16 +1897,19 @@ if ($action === "get_vod_info") {
       "description" => (string)($r["plot"] ?? ""),
       "plot" => (string)($r["plot"] ?? ""),
       "rating" => (string)($r["rating"] ?? ""),
+      "rating_5based" => (string)round(((float)($r["rating"] ?? 0)) / 2, 1),
       "country" => (string)($r["country"] ?? ""),
       "genre" => (string)($r["genre"] ?? ""),
-      "backdrop_path" => [(string)($r["backdrop"] ?? "")],
+      "backdrop_path" => ((string)($r["backdrop"] ?? "") !== "") ? [(string)$r["backdrop"]] : [],
       "cast_array" => $castArray
     ],
     "movie_data" => [
       "stream_id" => (int)$r["id"],
       "name" => (string)$r["title"],
       "o_name" => (string)($r["o_name"] ?? ""),
-      "added" => (string)time()
+      "added" => (string)time(),
+      "category_id" => "1",
+      "container_extension" => extOf((string)($r["path"] ?? ""), "mp4")
     ]
   ]);
 }
@@ -1874,7 +1943,7 @@ if ($action === "get_series") {
     $outCatId = $categoryId;
   }
 
-  $sql = "SELECT id, name, o_name, kinopoisk_url, COALESCE(NULLIF(TRIM(cat),''),'Unsorted') AS cat, tmdb_id, poster, backdrop, plot, rating, release_date, `cast`, `trailer`, director
+  $sql = "SELECT id, name, o_name, kinopoisk_url, COALESCE(NULLIF(TRIM(cat),''),'Unsorted') AS cat, tmdb_id, poster, backdrop, plot, rating, release_date, `cast`, `trailer`, director, genre
           FROM series $where
           ORDER BY id DESC";
   $st = $pdo->prepare($sql);
@@ -1884,20 +1953,34 @@ if ($action === "get_series") {
   $outSeries = [];
   $n=1;
   foreach ($rows as $r) {
+
+      $castArray = json_decode((string)($r["cast"] ?? "[]"), true);
+      if (!is_array($castArray)) $castArray = [];
+
+      $names = [];
+      foreach ($castArray as $actor) {
+          if (!empty($actor["name"])) {
+              $names[] = $actor["name"];
+          }
+      }
+
+    $namesString = implode(", ", $names);
+
     $outSeries[] = [
       "num" => $n++,
-      "kinopoisk_url" => (string)($r["kinopoisk_url"] ?? ""),
-      "tmdb_id" => (string)($r["tmdb_id"] ?? ""),
       "name" => (string)$r["name"],
-      "o_name" => (string)($r["o_name"] ?? ""),
       "cover" => (string)($r["poster"] ?? ""),
-      "cover_big" => (string)($r["poster"] ?? ""),
       "plot" => (string)($r["plot"] ?? ""),
+      "cast" => $namesString,
       "director" => (string)($r["director"] ?? ""),
-      "genre" => (string)$r["cat"],
+      "genre" => (string)($r["genre"] ?? ""),
       "releasedate" => (string)($r["release_date"] ?? ""),
-      "rating" => (string)($r["rating"] ?? ""),
+      "releaseDate" => (string)($r["release_date"] ?? ""),
+      "release_date" => (string)($r["release_date"] ?? ""),
+      "rating" => isset($r["rating"]) ? (float)$r["rating"] : 0.0,
       "backdrop_path" => ((string)($r["backdrop"] ?? "") !== "") ? [ (string)$r["backdrop"] ] : [],
+      "tmdb" => (string)($r["tmdb_id"] ?? ""),
+      "kinopoisk_url" => (string)($r["kinopoisk_url"] ?? ""),
       "series_id" => (int)$r["id"],
       "category_id" => "0"
     ];
@@ -1915,7 +1998,7 @@ if ($action === "get_series_info") {
   $row = $s->fetch();
   if (!$row) out(["info"=>new stdClass(),"seasons"=>[],"episodes"=>new stdClass()]);
 
-  $e = $pdo->prepare("SELECT id, season, episode, title, path
+  $e = $pdo->prepare("SELECT id, season, episode, title, path, crew
                       FROM episodes WHERE series_id=:sid
                       ORDER BY season, episode, id");
   $e->execute([":sid" => (int)$sid]);
@@ -1951,17 +2034,39 @@ if ($action === "get_series_info") {
 
     $eid = (int)$ep["id"];
 
+    $castNames = [];
+
+    if (!empty($row["cast"])) {
+        $castData = json_decode($row["cast"], true);
+
+        if (is_array($castData)) {
+            foreach ($castData as $c) {
+                if (!empty($c["name"])) {
+                    $castNames[] = $c["name"];
+                }
+            }
+        }
+    }
+
     $grouped[$seasonKey][] = [
-      "id" => $eid,
-      "episode_num" => $epnum,
-      "title" => (string)($ep["title"] ?? ""),
-      "container_extension" => $ext,
-      "info" => new stdClass(),
-      "custom_sid" => "",
-      "added" => (string)time(),
-      "season" => $season,
-      "direct_source" => "",
-      "stream_id" => $eid
+    "id" => (string)$eid,
+    "episode_num" => $epnum,
+    "title" => (string)($ep["title"] ?? ""),
+    "container_extension" => $ext,
+    "info" => [
+        "air_date" => (string)($ep["air_date"] ?? ($row["release_date"] ?? "")),
+        "crew" => (string)($ep["crew"] ?? ""),
+        "rating" => (float)($ep["rating"] ?? ($row["rating"] ?? 0)),
+        "id" => (int)($row["tmdb_id"] ?? ($row["tmdb"] ?? 0)),
+        "movie_image" => (string)($ep["movie_image"] ?? ($row["poster"] ?? "")),
+        "duration_secs" => (int)($ep["duration_secs"] ?? 0),
+        "duration" => (string)($ep["duration"] ?? "")
+    ],
+    "custom_sid" => null,
+    "added" => (string)time(),
+    "season" => $season,
+    "direct_source" => "",
+    "stream_id" => $eid
     ];
   }
 
@@ -1969,43 +2074,42 @@ if ($action === "get_series_info") {
   foreach ($seasonsMeta as $sk => $cnt) {
     $sn = (int)$sk;
     $seasons[] = [
-      "id" => $sn,
-      "season_number" => $sn,
-      "name" => "Season " . $sn,
-      "episode_count" => (int)$cnt,
-      "overview" => "",
-      "cover" => (string)($row["poster"] ?? ""),
+    "id" => $sn,
+    "season_number" => $sn,
+    "name" => "Season " . $sn,
+    "episode_count" => (string)$cnt,
+    "overview" => (string)($row["poster"] ?? ""),
+    "air_date" => (string)($row["release_date"] ?? ""),
+    "cover" => (string)($row["poster"] ?? ""),
+    "cover_tmdb" => (string)($row["poster"] ?? ""),
+    "cover_big" => (string)($row["poster"] ?? ""),
+    "releaseDate" => (string)($row["release_date"] ?? ""),
+    "duration" => "0"
     ];
   }
 
   $episodes = count($grouped) ? $grouped : new stdClass();
 
   out([
-    "info" => [
-      "kinopoisk_url" => (string)($row["kinopoisk_url"] ?? ""),
-      "tmdb_id" => (string)($row["tmdb_id"] ?? ""),
-      "name" => (string)$row["name"],
-      "o_name" => (string)($row["o_name"] ?? ""),
-      "cover" => (string)($row["poster"] ?? ""),
-      "cover_big" => (string)($row["poster"] ?? ""),
-      "movie_image" => (string)($row["poster"] ?? ""),
-      "releasedate" => (string)($row["release_date"] ?? ""),
-      "last_modified" => (string)time(),
-      "youtube_trailer" => (string)($row["trailer"] ?? ""),
-      "director" => (string)($row["director"] ?? ""),
-      "actors" => $namesString,
-      "cast" => $namesString,
-      "description" => (string)($row["plot"] ?? ""),
-      "plot" => (string)($row["plot"] ?? ""),
-      "rating" => (string)($row["rating"] ?? ""),
-      "rating_5based" => 0,
-      "country" => (string)($row["country"] ?? ""),
-      "genre" => (string)($row["genre"] ?? ""),
-      "backdrop_path" => ((string)($row["backdrop"] ?? "") !== "") ? [ (string)$row["backdrop"] ] : [],
-      "series_id" => (int)$sid,
-      "cast_array" => $castArray
-    ],
     "seasons" => $seasons,
+    "info" => [
+      "name" => (string)$row["name"],
+      "cover" => (string)($row["poster"] ?? ""),
+      "plot" => (string)($row["plot"] ?? ""),
+      "cast" => $namesString,
+      "director" => (string)($row["director"] ?? ""),
+      "genre" => (string)($row["genre"] ?? ""),
+      "releaseDate" => (string)($row["release_date"] ?? ""),
+      "release_date" => (string)($row["release_date"] ?? ""),
+      "last_modified" => (string)time(),
+      "rating" => (string)($row["rating"] ?? ""),
+      "rating_5based" => (string)round(((float)$row["rating"] ?? 0) /2, 1),
+      "backdrop_path" => ((string)($row["backdrop"] ?? "") !== "") ? [ (string)$row["backdrop"] ] : [],
+      "tmdb" => (string)($row["tmdb_id"] ?? ""),
+      "kinopoisk_url" => (string)($row["kinopoisk_url"] ?? ""),
+      "youtube_trailer" => (string)($row["trailer"] ?? ""),
+      "series_id" => (int)$sid
+    ],
     "episodes" => $episodes
   ]);
 }
@@ -2310,7 +2414,8 @@ def ensure_vod_db() -> None:
             episode INTEGER,
             title TEXT,
             path TEXT,
-            plot TEXT
+            plot TEXT,
+            crew TEXT
         )
     """)
 
@@ -2514,6 +2619,7 @@ def scan_series_sqlite() -> tuple[int, int]:
 
                         ep_plot = ""
                         ep_title = title
+                        ep_crew = ""
 
                         ep_path = str(p)
                         cur.execute("SELECT 1 FROM episodes WHERE path=?", (ep_path,))
@@ -2526,6 +2632,7 @@ def scan_series_sqlite() -> tuple[int, int]:
                             epinfo = fetch_tmdb_episode(int(tmdb["tmdb_id"]), int(season_num), int(ep_num))
                             if epinfo:
                                 ep_plot = epinfo.get("plot", "") or ""
+                                ep_crew = epinfo.get("crew", "") or ""
                                 if epinfo.get("title"):
                                     ep_title = epinfo["title"]
 
@@ -2535,8 +2642,8 @@ def scan_series_sqlite() -> tuple[int, int]:
 
                         if not exists:
                             cur.execute(
-                                "INSERT INTO episodes(id,series_id,season,episode,title,path,plot) VALUES(?,?,?,?,?,?,?)",
-                                (ep_id, current_series_id, int(season_num), int(ep_num), ep_title, ep_path, ep_plot)
+                                "INSERT INTO episodes(id,series_id,season,episode,title,path,plot,crew) VALUES(?,?,?,?,?,?,?,?)",
+                                (ep_id, current_series_id, int(season_num), int(ep_num), ep_title, ep_path, ep_plot, ep_crew)
                             )
                             ep_id += 1
                             ep_count += 1
@@ -2563,13 +2670,15 @@ def scan_series_sqlite() -> tuple[int, int]:
 
                     ep_plot = ""
                     ep_title = title
+                    ep_crew = ""
 
                     if tmdb and int(season_num) > 0 and int(ep_num) > 0:
-                        epinfo = fetch_tmdb_episode(int(tmdb["tmdb_id"]), int(season_num), int(ep_num))
-                        if epinfo:
-                            ep_plot = epinfo.get("plot", "") or ""
-                            if epinfo.get("title"):
-                                ep_title = epinfo["title"]
+                            epinfo = fetch_tmdb_episode(int(tmdb["tmdb_id"]), int(season_num), int(ep_num))
+                            if epinfo:
+                                ep_plot = epinfo.get("plot", "") or ""
+                                ep_crew = epinfo.get("crew", "") or ""
+                                if epinfo.get("title"):
+                                    ep_title = epinfo["title"]
 
                     ep_path = str(p)
                     cur.execute("SELECT 1 FROM episodes WHERE path=?", (ep_path,))
@@ -2577,8 +2686,8 @@ def scan_series_sqlite() -> tuple[int, int]:
 
                     if not exists:
                         cur.execute(
-                            "INSERT INTO episodes(id,series_id,season,episode,title,path,plot) VALUES(?,?,?,?,?,?,?)",
-                            (ep_id, current_series_id, int(season_num), int(ep_num), ep_title, ep_path, ep_plot)
+                            "INSERT INTO episodes(id,series_id,season,episode,title,path,plot,crew) VALUES(?,?,?,?,?,?,?,?)",
+                            (ep_id, current_series_id, int(season_num), int(ep_num), ep_title, ep_path, ep_plot, ep_crew)
                         )
                         ep_id += 1
                         ep_count += 1
@@ -2702,7 +2811,8 @@ def ensure_vod_stack() -> None:
         ensure_vod_db()
         write_vod_web()
         print(f"[VOD] VOD_WEBROOT target = {VOD_WEBROOT}")
-        print(f"[VOD] Webfiles geschrieben: {VOD_WEBROOT} & {VOD_DB_DIR}")
+        print(f"[VOD] Web-files geschrieben: {VOD_WEBROOT} & {VOD_DB_DIR}")
+        print(f"[SCAN] Starte Filme & Serien Scan...")
 
     # 🔁 DB & Scan IMMER
 
@@ -3011,23 +3121,28 @@ def tmdb_tv_info(name: str):
         "kinopoisk_url": kinopoisk_url
     }}
 
-def tmdb_episode_info(tmdb_id: int, season: int, episode: int):
-    if not TMDB_API_KEY or requests is None:
-        return None
+def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
     try:
-        url = f"{{TMDB_BASE}}/tv/{{tmdb_id}}/season/{{season}}/episode/{{episode}}"
-        params = {{
-            "api_key": TMDB_API_KEY,
-            "language": "de-DE",
-        }}
-        r = requests.get(url, params=params, timeout=10)
-        if r.status_code != 200:
-            return None
-        data = r.json()
+        url = f"https://api.themoviedb.org/3/tv/{{tmdb_id}}/season/{{season}}/episode/{{episode}}"
+        params = {{"api_key": TMDB_API_KEY, "language": TMDB_LANG}}
+        data = requests.get(url, params=params, timeout=10).json()
+
+        credits_url = f"https://api.themoviedb.org/3/tv/{{tmdb_id}}/season/{{season}}/episode/{{episode}}/credits"
+        credits = requests.get(credits_url, params=params, timeout=10).json()
+
+        crew_names = []
+        for item in credits.get("crew", []):
+            name = str(item.get("name", "")).strip()
+            if name and name not in crew_names:
+                crew_names.append(name)
+
+        crew_string = ", ".join(crew_names[:5])
+
         return {{
-            "title": data.get("name") or "",
-            "plot": data.get("overview") or "",
-            "air_date": data.get("air_date") or "",
+            "title": data.get("name", "") or "",
+            "plot": data.get("overview", "") or "",
+            "air_date": data.get("air_date", "") or "",
+            "crew": crew_string,
         }}
     except Exception:
         return None
@@ -3115,7 +3230,7 @@ def main():
         if info:
             cur.execute(
                 "INSERT INTO vod(id,title,o_name,kinopoisk_url,cat,path,tmdb_id,poster,backdrop,plot,rating,release_date,cast,trailer,director,genre,country) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (vid, title, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, path, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""),info.get("country", "") )
+                (vid, title, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, path, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""),info.get("country", ""))
             )
         else:
             cur.execute(
@@ -3142,7 +3257,7 @@ def main():
         if info:
             cur.execute(
                 "INSERT INTO series(id,name,o_name,kinopoisk_url,cat,tmdb_id,poster,backdrop,plot,rating,release_date,cast,trailer,director,genre,country) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (sid, name, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""), info.get("country", ""),)
+                (sid, name, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""), info.get("country", ""))
             )
             tmdb_id = info["tmdb_id"]
         else:
@@ -3181,8 +3296,8 @@ def main():
                     ep_title = epinfo["title"]
 
         cur.execute(
-            "INSERT INTO episodes(id,series_id,season,episode,title,path,plot) VALUES(?,?,?,?,?,?,?)",
-            (eid, sid, season, epnum, ep_title, path, ep_plot)
+            "INSERT INTO episodes(id,series_id,season,episode,title,path,plot,crew) VALUES(?,?,?,?,?,?,?,?)",
+            (eid, sid, season, epnum, ep_title, path, ep_plot, ep_crew)
         )
         new_eps += 1
         time.sleep(0.05)
@@ -3307,7 +3422,12 @@ def write_log_cleanup_cron(cron_path: Path) -> None:
     content = """SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-30 4 * * * root find /var/log -name "ffmpeg_*.log" -mtime +30 -delete
+*/30 * * * * root ls /var/log/ffmpeg_*.log 1>/dev/null 2>&1 && \
+for f in /var/log/ffmpeg_*.log; do \
+  tail -n 1500 "$f" > "$f.tmp" && mv "$f.tmp" "$f"; \
+done
+
+0 4 * * * root find /var/log -name "ffmpeg_*.log" -mtime +7 -delete
 """
 
     cron_path.write_text(content, encoding="utf-8")
@@ -3535,11 +3655,16 @@ def main() -> None:
     print("=" * 60 + "\n")
 
     # ===== 9. EPG JETZT GENERIEREN (state.json existiert durch gestartete Kanäle) =====
-    print("[EPG] Generiere EPG mit start aus state.json Daten... und logs und ffprobe")
+    print("[LIVE] Befülle DB mit Live Channels ")
     scan_live_tv_to_db(channels)
     write_m3u(channels)
     write_m3u_with_auth(channels)
     write_live_map_json(channels, start_id=1000)
+
+    print("[EPG] Warte 5 Sekunden, damit Services/State sauber bereit sind...")
+    time.sleep(5)
+
+    print("[EPG] Generiere EPG mit Start aus state.json Daten. Dauer aus logs, falls vorhanden, falls nicht vorhanden, ffprobe")
     write_epg(channels, list_files)
     write_xmltv_epg()
     print("[EPG] Fertig.\n")
