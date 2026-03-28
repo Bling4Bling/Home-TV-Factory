@@ -173,6 +173,12 @@ SERIES_PREFIX_STRIP: dict[str, list[str]] = {
     "The Big Bang Theory": ["The Big Bang Theory", "The Big Bang Theory", "The Big Bang Theory"],
     "The Walking Dead": ["The Walking Dead", "The Walking Dead", "The Walking Dead"],
     "Young Sheldon": ["Young Sheldon", "Young Sheldon", "Young Sheldon"],
+    "Narcos": ["Narcos", "Narcos", "Narcos"],
+    "El Chapo": ["El Chapo", "El Chapo", "El Chapo"],
+    "Gomorrha": ["Gomorrha", "Gomorrha", "Gomorrha"],
+    "Breaking Bad": ["Breaking Bad", "Breaking Bad", "Breaking Bad"],
+    "Der Prinz von Bel Air": ["Der Prinz von Bel Air", "Der Prinz von Bel Air", "Der Prinz von Bel-Air"],
+    "Malcolm mittendrin": ["Malcolm mittendrin", "Malcolm mittendrin", "Malcolm mittendrin"],
     # Beispiele:
     # "Star Wars": ["Star Wars"],
     # "Jaws": ["Jaws", "Der weiße Hai"],
@@ -3117,7 +3123,7 @@ def tmdb_tv_info(name: str):
         "director": director,
         "genre": genres,
         "country": country,
-        "o_name": original_title,
+        "o_name": original_name,
         "kinopoisk_url": kinopoisk_url
     }}
 
@@ -3287,11 +3293,13 @@ def main():
 
         ep_plot = ""
         ep_title = title
+        ep_crew = ""
 
         if series_tmdb_id and season > 0 and epnum > 0:
-            epinfo = tmdb_episode_info(series_tmdb_id, season, epnum)
+            epinfo = fetch_tmdb_episode(series_tmdb_id, season, epnum)
             if epinfo:
                 ep_plot = epinfo.get("plot", "") or ""
+                ep_crew = epinfo.get("crew", "") or ""
                 if epinfo.get("title"):
                     ep_title = epinfo["title"]
 
