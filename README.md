@@ -3,7 +3,7 @@
 Ein vollständiges, automatisiertes IPTV-Streaming-System für lokale Medien mit VOD-Unterstützung, EPG-Generierung und Xtream Codes API-Kompatibilität. Optimiert für Formuler Geräte (MyTVOnline3), Enigma2, VLC und SmartTVs.
 
 **Zero-Config Installation**: Die Factory installiert automatisch alle Software-Pakete (ffmpeg, nginx, php).  
-**Voraussetzung**: Die Medien-Ordner müssen vor dem ersten Start existieren [siehe Verzeichnisstruktur](#verzeichnisstruktur-vorab-anlegen)
+**Voraussetzung**: Die Medien-Ordner müssen vor dem ersten Start existieren [siehe Verzeichnisstruktur](#verzeichnisstruktur)
 
 ## ✨ Features
 
@@ -35,7 +35,9 @@ Ein vollständiges, automatisiertes IPTV-Streaming-System für lokale Medien mit
 
 *Manuelle `apt install` Befehle sind nicht nötig, aber root-Rechte werden vorausgesetzt*
 
-##  Verzeichnisstruktur      (VORAB ANLEGEN!)
+##  Verzeichnisstruktur
+
+*(VORAB ANLEGEN!)*
 
 **Wichtig**: Diese Ordner müssen vor dem ersten Factory-Start existieren und die Pfade in `tv_factory.py` angepasst werden:
 
