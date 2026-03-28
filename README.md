@@ -68,7 +68,7 @@ PICONS_ROOT = "/srv/media_hdd/picons"              # Logos hier ablegen
 sudo cp tv_factory.py /usr/local/bin/
 sudo chmod +x /usr/local/bin/tv_factory.py
 
-
+```
 ## 🤝 Mitmachen & Verbessern
 
 Dieses Projekt ist ein **Work in Progress** – und ich freue mich über jeden, der mit anpackt!
