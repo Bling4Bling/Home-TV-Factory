@@ -12,7 +12,7 @@ Ein vollständiges, automatisiertes IPTV-Streaming-System für lokale Medien mit
 - **🔄 Shuffle-Kanäle** - Smarte Mix-Kanäle (z.B. "Die Simpsons 24/7", "Movies UHD")
 - **📻 Radio Streaming** - Mit statischem Hintergrundbild und EPG
 - **📋 EPG (XMLTV)** - Automatische Programm-Guide Generierung für 8+ Tage
-- **🔗 Xtream Codes API** - Kompatibel mit Xstreamity, MyTVOnline3, TiviMate
+- **🔗 Xtream Codes API** - Kompatibel mit Xstreamity, MyTVOnline3, IPTVX, usw...
 - **🗄️ SQLite Datenbank** - Schnelle Indizierung aller Medien
 - **⚡ FFmpeg HLS** - Hardware-accelerated Streaming (copy-codec)
 - **🐧 Systemd Integration** - Automatische Service-Verwaltung
@@ -33,7 +33,7 @@ Ein vollständiges, automatisiertes IPTV-Streaming-System für lokale Medien mit
 - `php-sqlite3` (Datenbank-Backend)
 - `python3-requests` (TMDB API)
 
-*Manuelle `apt install` Befehle sind nicht nötig, aber root-Rechte werden vorausgesetzt.*
+*Manuelle `apt install` Befehle sind nicht nötig, aber root-Rechte werden vorausgesetzt*
 
 ## 📁 Verzeichnisstruktur (VORAB ANLEGEN!)
 
@@ -80,7 +80,7 @@ Besonders willkommen sind:
 ### Wie du mitmachen kannst:
 
 1. **Verbessere den Code** in deinem Fork
-2. **Teste** neue Lösungen (besonders mit MyTVOnline3, TiviMate, VLC)
+2. **Teste** neue Lösungen (besonders mit MyTVOnline3, SmartersPlayerLite, usw...)
 3. **Teile deine Ergebnisse** als Pull Request oder Issue
 
 > 💡 **Ich würde mich freuen**, wenn wir gemeinsam dieses Tool perfektionieren können!  
@@ -102,6 +102,7 @@ Do not distribute copyrighted content. Private/non-commercial use only.
 
 📄 Lizenz
 GPL-3.0 - Frei verwendbar für private Projekte.
+
 🙏 Credits
 FFmpeg Team
 TMDB für Metadaten-API
