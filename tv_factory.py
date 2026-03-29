@@ -2275,7 +2275,7 @@ header("Cache-Control: no-cache");
 header("Connection: close");
 
 // stream HLS -> TS (copy)
-passthru("/usr/bin/ffmpeg -hide_banner -loglevel error -fflags nobuffer -flags low_delay -i " . escapeshellarg($src) . " -c copy -f mpegts -muxdelay 0 -muxpreload 0 -");
+passthru('/usr/bin/ffmpeg -hide_banner -loglevel quiet -fflags +genpts+discardcorrupt -flags low_delay -i ' . escapeshellarg($src) . ' -c copy -muxdelay 0 -muxpreload 0 -f mpegts -');
 ?>"""
     write_text(VOD_WEBROOT / "live_ts.php", live_ts_php)
 
