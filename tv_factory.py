@@ -826,15 +826,19 @@ while true; do
    # ---- START LOG ----
    echo "START file=$file expected=${{dur}}s at=$(date '+%F %T')" >> "/var/log/ffmpeg_${{CHANNEL_ID}}.log"
 
-/usr/bin/ffmpeg -hide_banner -loglevel quiet -re -i "$file" \\
+/usr/bin/ffmpeg -hide_banner -loglevel quiet \\
+    -re -fflags +genpts -i "$file" \\
     -map 0:v:0 -map 0:a:0 \\
-    -c:v copy -c:a aac -ac 2 -b:a 192k \\
-    -f hls -hls_time 6 -hls_list_size 8 \\
-    -sn \\
+    -c:v copy \\
+    -c:a aac -ac 2 -b:a 192k -af aresample=async=1 \\
+    -f hls \\
+    -hls_time 6 \\
+    -hls_list_size 8 \\
     -hls_flags delete_segments+append_list+omit_endlist \\
+    -force_key_frames "expr:gte(t,n_forced*6)" \\
     -hls_segment_filename "$OUTDIR/${{CHANNEL_ID}}_%05d.ts" \\
     -t "$dur" \\
-    "$OUTDIR/${{CHANNEL_ID}}.m3u8" \\
+    "$OUTDIR/${{CHANNEL_ID}}.m3u8"
     >> /var/log/ffmpeg_${{CHANNEL_ID}}.log 2>&1
 
    # ---- END LOG ----
