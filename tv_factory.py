@@ -3598,9 +3598,12 @@ def main() -> None:
             files.sort(key=lambda p: (extract_year(p), natural_key))
         if not files:
             continue
+
+        clean_name = re.sub(r' \(\d{4}\)$', '', d.name)
+
         ch = Channel(
-            id=slugify(d.name),
-            name=d.name,
+            id=slugify(clean_name),
+            name=clean_name,
             kind="video",
             logo=detect_logo_in_dir(d),
             files=files,
@@ -3614,9 +3617,12 @@ def main() -> None:
         files = collect_videos_in_dir(d)
         if not files:
             continue
+
+        clean_name = re.sub(r' \(\d{4}\)$', '', d.name)
+
         ch = Channel(
-            id=slugify(d.name),
-            name=d.name,
+            id=slugify(clean_name),
+            name=clean_name,
             kind="video",
             logo=detect_logo_in_dir(d),
             files=files,
