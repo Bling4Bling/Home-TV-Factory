@@ -482,6 +482,60 @@ def fetch_tmdb(title: str, year: str | None = None):
     except Exception:
         return None
 
+def fetch_tmdb_by_id(tmdb_id: str):
+    try:
+        kinopoisk_url = f"https://www.themoviedb.org/movie/{tmdb_id}"
+
+        detail = requests.get(
+            f"https://api.themoviedb.org/3/movie/{tmdb_id}",
+            params={"api_key": TMDB_API_KEY, "language": TMDB_LANG},
+            timeout=10
+        ).json()
+
+        if not detail or detail.get("success") is False:
+            return None
+
+        credits = requests.get(
+            f"https://api.themoviedb.org/3/movie/{tmdb_id}/credits",
+            params={"api_key": TMDB_API_KEY, "language": TMDB_LANG},
+            timeout=10
+        ).json()
+
+        director = ""
+        for person in credits.get("crew", []):
+            if person.get("job") == "Director":
+                director = person.get("name", "") or ""
+                break
+
+        genres = ", ".join(
+            g.get("name", "") for g in detail.get("genres", []) if g.get("name")
+        )
+
+        countries = ", ".join(
+            c.get("name", "") for c in detail.get("production_countries", []) if c.get("name")
+        )
+
+        cast = fetch_tmdb_credits(int(tmdb_id), "movie")
+        trailer = fetch_tmdb_trailer(int(tmdb_id), "movie")
+
+        return {
+            "tmdb_id": int(tmdb_id),
+            "poster": (TMDB_IMAGE_BASE + "w500" + detail["poster_path"]) if detail.get("poster_path") else "",
+            "backdrop": (TMDB_IMAGE_BASE + "w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
+            "plot": detail.get("overview", "") or "",
+            "rating": str(detail.get("vote_average", "") or ""),
+            "release_date": detail.get("release_date", "") or "",
+            "cast": cast,
+            "trailer": trailer,
+            "director": director,
+            "genre": genres,
+            "country": countries,
+            "o_name": detail.get("original_title", "") or "",
+            "kinopoisk_url": kinopoisk_url,
+        }
+    except Exception:
+        return None
+
 def fetch_tmdb_tv(name: str):
     try:
         url = "https://api.themoviedb.org/3/search/tv"
@@ -3156,60 +3210,6 @@ def tmdb_movie_info_by_id(tmdb_id: str):
         "o_name": detail.get("original_title", "") or "",
         "kinopoisk_url": kinopoisk_url,
     }}
-
-def fetch_tmdb_by_id(tmdb_id: str):
-    try:
-        kinopoisk_url = f"https://www.themoviedb.org/movie/{{tmdb_id}}"
-
-        detail = requests.get(
-            f"https://api.themoviedb.org/3/movie/{{tmdb_id}}",
-            params={{"api_key": TMDB_API_KEY, "language": TMDB_LANG}},
-            timeout=10
-        ).json()
-
-        if not detail or detail.get("success") is False:
-            return None
-
-        credits = requests.get(
-            f"https://api.themoviedb.org/3/movie/{{tmdb_id}}/credits",
-            params={{"api_key": TMDB_API_KEY, "language": TMDB_LANG}},
-            timeout=10
-        ).json()
-
-        director = ""
-        for person in credits.get("crew", []):
-            if person.get("job") == "Director":
-                director = person.get("name", "") or ""
-                break
-
-        genres = ", ".join(
-            g.get("name", "") for g in detail.get("genres", []) if g.get("name")
-        )
-
-        countries = ", ".join(
-            c.get("name", "") for c in detail.get("production_countries", []) if c.get("name")
-        )
-
-        cast = fetch_tmdb_credits(int(tmdb_id), "movie")
-        trailer = fetch_tmdb_trailer(int(tmdb_id), "movie")
-
-        return {{
-            "tmdb_id": int(tmdb_id),
-            "poster": (TMDB_IMAGE_BASE + "w500" + detail["poster_path"]) if detail.get("poster_path") else "",
-            "backdrop": (TMDB_IMAGE_BASE + "w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
-            "plot": detail.get("overview", "") or "",
-            "rating": str(detail.get("vote_average", "") or ""),
-            "release_date": detail.get("release_date", "") or "",
-            "cast": cast,
-            "trailer": trailer,
-            "director": director,
-            "genre": genres,
-            "country": countries,
-            "o_name": detail.get("original_title", "") or "",
-            "kinopoisk_url": kinopoisk_url,
-        }}
-    except Exception:
-        return None
 
 def tmdb_tv_info(name: str):
     q = clean_title(name)
