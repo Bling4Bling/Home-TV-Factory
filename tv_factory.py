@@ -115,6 +115,14 @@ SHUFFLES = [
     },
 
     {
+        "id": "imdbtop",
+        "name": "IMDB Top",
+        "dir_names": {"IMDB Top", "imdbtop", "IMDB-Top", "imdbtop"},
+        "scope": "movies",
+        "recursive": False,
+    },
+
+    {
         "id": "diesimpsons",
         "name": "Die Simpsons",
         "dir_names": {"Die Simpsons", "die simpsons", "Die-Simpsons", "diesimpsons"},
@@ -324,10 +332,17 @@ def get_last_run_seconds(file_path: Path, channel_id: str) -> int | None:
 
 def clean_title(s: str) -> str:
     s = re.sub(r"\.(mkv|mp4|avi|m4v)$", "", s, flags=re.I)
-    s = re.sub(r"\b(19|20)\d{2}\b", "", s)
+    s = re.sub(r"\((19|20)\d{2}\)", "", s)
     s = re.sub(r"\b(720p|1080p|2160p|x264|x265|bluray|web|webrip|hdrip|dv|hdr|ac3|dts)\b", "", s, flags=re.I)
     s = re.sub(r"[._]", " ", s)
     return " ".join(s.split()).strip()
+
+def extract_tmdb_id(name: str):
+    m = re.search(r"\{tmdb-(\d+)\}", name, re.IGNORECASE)
+    return m.group(1) if m else None
+
+def strip_tmdb_tag(name: str):
+    return re.sub(r"\{tmdb-\d+\}", "", name, flags=re.IGNORECASE).strip()
 
 def fetch_tmdb_trailer(tmdb_id: int, kind: str = "movie") -> str:
     """
@@ -1036,7 +1051,7 @@ def build_epg_for_video_channel(ch: Channel, list_file: Path, now: datetime, end
             stop = end
 
         # title aus dateiname
-        raw_title = f.stem
+        raw_title = clean_title(strip_tmdb_tag(f.stem))
         title = re.sub(r"\s*\(\d{4}\)\s*$", "", raw_title).strip()
 
         # Nur bei Serien-Kanälen prefix entfernen
@@ -2494,16 +2509,23 @@ def scan_vod_sqlite() -> int:
             if path in existing_paths:
                 continue
 
-            tmdb = fetch_tmdb(clean_title(title), year)
+            tmdb_id_tag = extract_tmdb_id(title)
+            clean_title_db = clean_title(strip_tmdb_tag(title))
+
+            if tmdb_id_tag:
+                tmdb = fetch_tmdb_by_id(tmdb_id_tag)
+            else:
+                tmdb = fetch_tmdb(clean_title(clean_title_db), year)
+
             if tmdb:
                 cur.execute(
                     "INSERT INTO vod(id,title,o_name,kinopoisk_url,cat,path,tmdb_id,poster,backdrop,plot,rating,release_date,cast,trailer,director,genre,country) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (vid, title, tmdb.get("o_name", ""), tmdb.get("kinopoisk_url", ""), cat, path, tmdb["tmdb_id"], tmdb["poster"], tmdb["backdrop"],
+                    (vid, clean_title_db, tmdb.get("o_name", ""), tmdb.get("kinopoisk_url", ""), cat, path, tmdb["tmdb_id"], tmdb["poster"], tmdb["backdrop"],
                      tmdb["plot"], tmdb["rating"], tmdb["release_date"], tmdb.get("cast", ""), tmdb.get("trailer", ""), tmdb.get("director", ""), tmdb.get("genre", ""), tmdb.get("country", ""))
                 )
                 time.sleep(0.05)
             else:
-                cur.execute("INSERT INTO vod(id,title,o_name,cat,path) VALUES(?,?,?,?,?)", (vid,title,"",cat,path))
+                cur.execute("INSERT INTO vod(id,clean_db_title,o_name,cat,path) VALUES(?,?,?,?,?)", (vid,title,"",cat,path))
 
             vid += 1
             found += 1
@@ -2933,11 +2955,16 @@ def clean_title(s: str) -> str:
     s = s.replace(".", " ").replace("_", " ").strip()
     # remove year like (1999) or 1999
     s = re.sub(r"\\((19\\d{{2}}|20\\d{{2}})\\)", "", s).strip()
-    s = re.sub(r"\\b(19\\d{{2}}|20\\d{{2}})\\b", "", s).strip()
     # remove extra spaces
     s = re.sub(r"\\s+", " ", s).strip()
     return s
 
+def extract_tmdb_id(name: str):
+    m = re.search(r"\\{{tmdb-(\\d+)\\}}", name, re.IGNORECASE)
+    return m.group(1) if m else None
+
+def strip_tmdb_tag(name: str):
+    return re.sub(r"\\{{tmdb-\\d+\\}}", "", name, flags=re.IGNORECASE).strip()
 
 def tmdb_search(kind: str, query: str, year: str | None = None):
     # kind: "movie" or "tv"
@@ -3078,6 +3105,111 @@ def tmdb_movie_info(title: str, year: str | None = None):
         "o_name": original_title,
         "kinopoisk_url": kinopoisk_url
     }}
+
+def tmdb_movie_info_by_id(tmdb_id: str):
+    kinopoisk_url = f"https://www.themoviedb.org/movie/{{tmdb_id}}"
+
+    detail = requests.get(
+        f"{{TMDB_BASE}}/movie/{{tmdb_id}}",
+        params={{"api_key": TMDB_API_KEY, "language": "de-DE"}},
+        timeout=10
+    ).json()
+
+    if not detail or detail.get("success") is False:
+        return None
+
+    credits = requests.get(
+        f"{{TMDB_BASE}}/movie/{{tmdb_id}}/credits",
+        params={{"api_key": TMDB_API_KEY, "language": "de-DE"}},
+        timeout=10
+    ).json()
+
+    director = ""
+    for person in credits.get("crew", []):
+        if person.get("job") == "Director":
+            director = person.get("name", "") or ""
+            break
+
+    genres = ", ".join(
+        g.get("name", "") for g in detail.get("genres", []) if g.get("name")
+    )
+
+    countries = ", ".join(
+        c.get("name", "") for c in detail.get("production_countries", []) if c.get("name")
+    )
+
+    cast = fetch_tmdb_credits(int(tmdb_id), "movie")
+    trailer = fetch_tmdb_trailer(int(tmdb_id), "movie")
+
+    return {{
+        "tmdb_id": int(tmdb_id),
+        "poster": (TMDB_IMAGE_BASE + detail["poster_path"]) if detail.get("poster_path") else "",
+        "backdrop": (TMDB_IMAGE_BASE + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
+        "plot": detail.get("overview", "") or "",
+        "rating": str(detail.get("vote_average", "") or ""),
+        "release_date": detail.get("release_date", "") or "",
+        "cast": cast,
+        "trailer": trailer,
+        "director": director,
+        "genre": genres,
+        "country": countries,
+        "o_name": detail.get("original_title", "") or "",
+        "kinopoisk_url": kinopoisk_url,
+    }}
+
+def fetch_tmdb_by_id(tmdb_id: str):
+    try:
+        kinopoisk_url = f"https://www.themoviedb.org/movie/{{tmdb_id}}"
+
+        detail = requests.get(
+            f"https://api.themoviedb.org/3/movie/{{tmdb_id}}",
+            params={{"api_key": TMDB_API_KEY, "language": TMDB_LANG}},
+            timeout=10
+        ).json()
+
+        if not detail or detail.get("success") is False:
+            return None
+
+        credits = requests.get(
+            f"https://api.themoviedb.org/3/movie/{{tmdb_id}}/credits",
+            params={{"api_key": TMDB_API_KEY, "language": TMDB_LANG}},
+            timeout=10
+        ).json()
+
+        director = ""
+        for person in credits.get("crew", []):
+            if person.get("job") == "Director":
+                director = person.get("name", "") or ""
+                break
+
+        genres = ", ".join(
+            g.get("name", "") for g in detail.get("genres", []) if g.get("name")
+        )
+
+        countries = ", ".join(
+            c.get("name", "") for c in detail.get("production_countries", []) if c.get("name")
+        )
+
+        cast = fetch_tmdb_credits(int(tmdb_id), "movie")
+        trailer = fetch_tmdb_trailer(int(tmdb_id), "movie")
+
+        return {{
+            "tmdb_id": int(tmdb_id),
+            "poster": (TMDB_IMAGE_BASE + "w500" + detail["poster_path"]) if detail.get("poster_path") else "",
+            "backdrop": (TMDB_IMAGE_BASE + "w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
+            "plot": detail.get("overview", "") or "",
+            "rating": str(detail.get("vote_average", "") or ""),
+            "release_date": detail.get("release_date", "") or "",
+            "cast": cast,
+            "trailer": trailer,
+            "director": director,
+            "genre": genres,
+            "country": countries,
+            "o_name": detail.get("original_title", "") or "",
+            "kinopoisk_url": kinopoisk_url,
+        }}
+    except Exception:
+        return None
 
 def tmdb_tv_info(name: str):
     q = clean_title(name)
@@ -3236,15 +3368,21 @@ def main():
         if cur.fetchone():
             continue  # already known
         vid = next_id(cur, "vod")
-        info = tmdb_movie_info(title, year)
+        tmdb_id_tag = extract_tmdb_id(title)
+        clean_title_db = clean_title(strip_tmdb_tag(title))
+
+        if tmdb_id_tag:
+            info = tmdb_movie_info_by_id(tmdb_id_tag)
+        else:
+            info = tmdb_movie_info(clean_title_db, year)
         if info:
             cur.execute(
                 "INSERT INTO vod(id,title,o_name,kinopoisk_url,cat,path,tmdb_id,poster,backdrop,plot,rating,release_date,cast,trailer,director,genre,country) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (vid, title, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, path, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""),info.get("country", ""))
+                (vid, clean_title_db, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, path, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""),info.get("country", ""))
             )
         else:
             cur.execute(
-                "INSERT INTO vod(id,title,o_name,cat,path) VALUES(?,?,?,?,?)",
+                "INSERT INTO vod(id,clean_title_db,o_name,cat,path) VALUES(?,?,?,?,?)",
                 (vid, title, "", cat, path)
             )
         new_vod += 1
