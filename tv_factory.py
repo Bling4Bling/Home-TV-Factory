@@ -1047,21 +1047,38 @@ def get_epg_desc_for_file(ch: Channel, f: Path) -> str:
         con = sqlite3.connect(VOD_DB)
         cur = con.cursor()
 
-        # erst Episode
-        cur.execute("SELECT plot FROM episodes WHERE path=? LIMIT 1", (str(f),))
+        full_path = str(f)
+        file_name = f.name
+
+        # 1) erst Episode per exaktem Pfad
+        cur.execute("SELECT plot FROM episodes WHERE path=? LIMIT 1", (full_path,))
         row = cur.fetchone()
         if row and row[0]:
             con.close()
             return str(row[0])
 
-        # dann Film
-        cur.execute("SELECT plot FROM vod WHERE path=? LIMIT 1", (str(f),))
+        # 2) dann Episode per Dateiname (robuster Fallback)
+        cur.execute("SELECT plot FROM episodes WHERE path LIKE ? LIMIT 1", (f"%{file_name}",))
         row = cur.fetchone()
         if row and row[0]:
             con.close()
             return str(row[0])
 
-        # dann Serienplot über Kanalname
+        # 3) dann Film per exaktem Pfad
+        cur.execute("SELECT plot FROM vod WHERE path=? LIMIT 1", (full_path,))
+        row = cur.fetchone()
+        if row and row[0]:
+            con.close()
+            return str(row[0])
+
+        # 4) dann Film per Dateiname
+        cur.execute("SELECT plot FROM vod WHERE path LIKE ? LIMIT 1", (f"%{file_name}",))
+        row = cur.fetchone()
+        if row and row[0]:
+            con.close()
+            return str(row[0])
+
+        # 5) dann Serienplot über Kanalname
         cur.execute("SELECT plot FROM series WHERE name=? LIMIT 1", (ch.name,))
         row = cur.fetchone()
         if row and row[0]:
@@ -1072,7 +1089,7 @@ def get_epg_desc_for_file(ch: Channel, f: Path) -> str:
     except Exception:
         pass
 
-    return f.stem
+    return clean_title(strip_tmdb_tag(f.stem))
 
 def build_epg_for_video_channel(ch: Channel, list_file: Path, now: datetime, end: datetime) -> List[str]:
     # liest die selbe Liste, die der Runner nutzt (shuffle ist damit korrekt)
