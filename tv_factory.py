@@ -332,6 +332,7 @@ def get_last_run_seconds(file_path: Path, channel_id: str) -> int | None:
 
 def clean_title(s: str) -> str:
     s = re.sub(r"\.(mkv|mp4|avi|m4v)$", "", s, flags=re.I)
+    s = re.sub(r"^\s*[\(\[]?\d+[\)\]]?\s*[-._ ]*\s*", "", s)
     s = re.sub(r"\((19|20)\d{2}\)", "", s)
     s = re.sub(r"\b(720p|1080p|2160p|x264|x265|bluray|web|webrip|hdrip|dv|hdr|ac3|dts)\b", "", s, flags=re.I)
     s = re.sub(r"[._]", " ", s)
@@ -2596,7 +2597,7 @@ def scan_vod_sqlite() -> int:
                 )
                 time.sleep(0.05)
             else:
-                cur.execute("INSERT INTO vod(id,clean_db_title,o_name,cat,path) VALUES(?,?,?,?,?)", (vid,title,"",cat,path))
+                cur.execute("INSERT INTO vod(id,clean_title,o_name,cat,path) VALUES(?,?,?,?,?)", (vid,title,"",cat,path))
 
             vid += 1
             found += 1
@@ -3024,6 +3025,8 @@ def init_db(con):
 
 def clean_title(s: str) -> str:
     s = s.replace(".", " ").replace("_", " ").strip()
+    s = re.sub(r"\\.(mkv|mp4|avi|m4v)$", "", s, flags=re.I)
+    s = re.sub(r"^\\s*(?:[\\(\\[]\\d+[\\)\\]]|\\d+)\\s*[-._ ]*\\s*", "", s)
     # remove year like (1999) or 1999
     s = re.sub(r"\\((19\\d{{2}}|20\\d{{2}})\\)", "", s).strip()
     # remove extra spaces
