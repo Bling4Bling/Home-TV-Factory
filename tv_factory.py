@@ -2597,7 +2597,7 @@ def scan_vod_sqlite() -> int:
                 )
                 time.sleep(0.05)
             else:
-                cur.execute("INSERT INTO vod(id,clean_title,o_name,cat,path) VALUES(?,?,?,?,?)", (vid,title,"",cat,path))
+                cur.execute("INSERT INTO vod(id,title,o_name,cat,path) VALUES(?,?,?,?,?)", (vid,clean_title_db,"",cat,path))
 
             vid += 1
             found += 1
@@ -3402,8 +3402,8 @@ def main():
             )
         else:
             cur.execute(
-                "INSERT INTO vod(id,clean_title_db,o_name,cat,path) VALUES(?,?,?,?,?)",
-                (vid, title, "", cat, path)
+                "INSERT INTO vod(id,title,o_name,cat,path) VALUES(?,?,?,?,?)",
+                (vid, clean_title_db, "", cat, path)
             )
         new_vod += 1
         time.sleep(0.05)
