@@ -27,6 +27,8 @@ from urllib.parse import urlparse
 # =========================
 # CONFIG (nur hier ändern)
 # =========================
+
+# ---- IP & Timezone ----
 SERVER_IP          = "192.168.1.67"                
 TIMEZONE           = "Europe/Vienna"
 
@@ -34,66 +36,64 @@ TIMEZONE           = "Europe/Vienna"
 IPTV_PORT          = 8081
 VOD_PORT           = 8080
 
-#Base URL ergibt sich aus SERVER IP
-BASE_URL           = SERVER_IP
+# ---- Base URL ergibt sich aus SERVER IP & VOD PORT ----
+BASE_URL           = f"http://{SERVER_IP}:{VOD_PORT}"
 
 IPTV_NAME          = "iptv"          # nginx site name: /etc/nginx/sites-available/iptv
 VOD_NAME           = "xstreamity"    # nginx site name: /etc/nginx/sites-available/xstreamity
 BOUQUET_NAME       = "Home TV"       # NUR EIN Bouquet
 
 # ---- Paths ----
-PICONS_ROOT        = "/srv/media_hdd/picons"
-PICONS_BASE_URL    = f"http://{SERVER_IP}:{IPTV_PORT}/picons"
 IPTV_ROOT          = "/srv/media_hdd/hls"
 VOD_ROOT           = "/var/www/xtream"
+PICONS_ROOT        = "/srv/media_hdd/picons"
+PICONS_BASE_URL    = f"http://{SERVER_IP}:{IPTV_PORT}/picons"
 
-# --- xstreamity Zugang ---
+# ---- Xstreamity Zugang ----
 VOD_USER           = "DeinUser"                    # Benutzernamen Erstellen
 VOD_PASS           = "Password"                    # Password Erstellen
 
-# --- Webroot & DB ---
+# --- Webroot & DB ----
 VOD_WEBROOT        = Path("/var/www/xtream")
 VOD_DB_DIR         = Path("/var/lib/xtream")
 VOD_DB             = VOD_DB_DIR / "xtream.db"
-BASE_URL           = f"http://{SERVER_IP}:{VOD_PORT}"
-VOD_BASE_URL       = BASE_URL
 
-# Debian/Ubuntu typisch (bei dir war es php8.2-fpm.sock)
+# ---- Debian/Ubuntu typisch (bei dir war es php8.2-fpm.sock) ----
 PHP_FPM_SOCK       = "/run/php/php8.2-fpm.sock"
 
-# Output-Ordner
+# ---- Output-Ordner ----
 BASE_HLS           = Path("/srv/media_hdd/hls")
 BASE_STATE         = Path("/srv/media_hdd/state")
 BASE_PLAY          = Path("/srv/media_hdd/playlists")
 
-# Media-Roots (2 Platten)
+# ---- Media-Roots (2 Platten) ----
 MOVIES_ROOTS       = [Path("/srv/media_hdd/filme"),  Path("/srv/media_14tb/filme")]
 MOVIE_ROOTS        = [Path("/srv/media_hdd/filme"),  Path("/srv/media_14tb/filme")]
 SERIES_ROOTS       = [Path("/srv/media_hdd/serien"), Path("/srv/media_14tb/serien")]
 X_MOVIE_ROOTS      = [Path("/srv/media_hdd/xstreamity/filme"),  Path("/srv/media_14tb/xstreamity/filme")]
 X_SERIES_ROOTS     = [Path("/srv/media_hdd/xstreamity/serien"), Path("/srv/media_14tb/xstreamity/serien")]
 
-# TMDB Für Scrapping von Serien & Movies
+# ---- TMDB Für Scrapping von Serien & Movies ----
 TMDB_API_KEY       = "dein-api-key"
 TMDB_LANG          = "de-DE"
 TMDB_IMAGE_BASE    = "https://image.tmdb.org/t/p/"
 
-# Dateiendungen
+# ---- Dateiendungen ----
 EXT = {".mkv", ".mp4", ".avi", ".mov", ".m4v"}
 VIDEO_EXT = {".mkv", ".mp4", ".ts", ".m4v", ".avi"}
 VIDEO_EXTS = {".mkv", ".mp4", ".ts", ".m4v", ".avi"}
 
-# Staffel-Erkennung (S01E02 oder 1x02)
+# ---- Staffel-Erkennung (S01E02 oder 1x02) ----
 YEAR_RE = re.compile(r"(19\d{2}|20\d{2})")
 SXXEYY_RE = re.compile(r"(?:s(\d{1,2})e(\d{1,2}))", re.IGNORECASE)
 SAFE_CHARS_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
 CATEGORY = "Serien"
 
-# Fallback falls ffprobe spinnt
+# ---- Fallback falls ffprobe spinnt ----
 FALLBACK_MIN = 22
 DAYS_AHEAD   = 8
 
-# Ordnernamen (Kanalnamen), die nach Jahr sortiert werden sollen
+# ---- Ordnernamen (Kanalnamen), die nach Jahr sortiert werden sollen ----
 SORT_BY_YEAR_DIRS = {
     "Jurassic TV",
    # "Star Wars",
@@ -192,7 +192,7 @@ SERIES_PREFIX_STRIP: dict[str, list[str]] = {
     # "Jaws": ["Jaws", "Der weiße Hai"],
 }
 
-# Radio
+# ---- Radio ----
 
 RADIOS = [
     {
@@ -423,12 +423,28 @@ def fetch_tmdb_credits(tmdb_id: int, kind: str = "movie") -> str:
 def fetch_tmdb(title: str, year: str | None = None):
     try:
         url = "https://api.themoviedb.org/3/search/movie"
-        params = {"api_key": TMDB_API_KEY, "query": title, "language": TMDB_LANG}
+
+        params = {
+            "api_key": TMDB_API_KEY,
+            "query": title,
+            "language": TMDB_LANG,   # zuerst de-DE
+        }
         if year:
             params["year"] = year
-        data = requests.get(url, params=params, timeout=10).json()
+
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+
         if not data.get("results"):
+            params_en = dict(params)
+            params_en["language"] = "en-US"
+            r = requests.get(url, params=params_en, timeout=10)
+            data = r.json()
+
+        if not data.get("results"):
+            print(f"[TMDB] movie search no result: title={title!r}, year={year!r}")
             return None
+
         m = data["results"][0]
         tmdb_id = m.get("id")
         kinopoisk_url = f"https://www.themoviedb.org/movie/{tmdb_id}"
@@ -439,6 +455,21 @@ def fetch_tmdb(title: str, year: str | None = None):
             params={"api_key": TMDB_API_KEY, "language": TMDB_LANG},
             timeout=10
         ).json()
+
+        if not detail or detail.get("success") is False:
+            print(f"[TMDB] movie detail failed for id={tmdb_id}")
+            return None
+
+        if not (detail.get("overview", "") or "").strip():
+            detail_en = requests.get(
+                f"https://api.themoviedb.org/3/movie/{tmdb_id}",
+                params={"api_key": TMDB_API_KEY, "language": "en-US"},
+                timeout=10
+            ).json()
+
+            if detail_en and detail_en.get("success") is not False:
+                if (detail_en.get("overview", "") or "").strip():
+                    detail = detail_en
 
         credits = requests.get(
             f"https://api.themoviedb.org/3/movie/{tmdb_id}/credits",
@@ -469,7 +500,7 @@ def fetch_tmdb(title: str, year: str | None = None):
             "tmdb_id": tmdb_id,
             "poster": (TMDB_IMAGE_BASE + "w500" + m["poster_path"]) if m.get("poster_path") else "",
             "backdrop": (TMDB_IMAGE_BASE + "w780" + m["backdrop_path"]) if m.get("backdrop_path") else "",
-            "plot": m.get("overview", "") or "",
+            "plot": detail.get("overview", "") or "",
             "rating": str(m.get("vote_average", "") or ""),
             "release_date": m.get("release_date", "") or "",
             "cast": cast,
@@ -480,7 +511,8 @@ def fetch_tmdb(title: str, year: str | None = None):
             "o_name": original_title,
             "kinopoisk_url": kinopoisk_url,
         }
-    except Exception:
+    except Exception as e:
+        print(f"[TMDB] fetch_tmdb failed: {e}")
         return None
 
 def fetch_tmdb_by_id(tmdb_id: str):
@@ -494,7 +526,19 @@ def fetch_tmdb_by_id(tmdb_id: str):
         ).json()
 
         if not detail or detail.get("success") is False:
+            print(f"[TMDB] movie detail failed for id={tmdb_id}")
             return None
+
+        if not (detail.get("overview", "") or "").strip():
+            detail_en = requests.get(
+                f"https://api.themoviedb.org/3/movie/{tmdb_id}",
+                params={"api_key": TMDB_API_KEY, "language": "en-US"},
+                timeout=10
+            ).json()
+
+            if detail_en and detail_en.get("success") is not False:
+                if (detail_en.get("overview", "") or "").strip():
+                    detail = detail_en
 
         credits = requests.get(
             f"https://api.themoviedb.org/3/movie/{tmdb_id}/credits",
@@ -534,16 +578,34 @@ def fetch_tmdb_by_id(tmdb_id: str):
             "o_name": detail.get("original_title", "") or "",
             "kinopoisk_url": kinopoisk_url,
         }
-    except Exception:
+    except Exception as e:
+        print(f"[TMDB] fetch_tmdb_by_id failed: {e}")
         return None
+
 
 def fetch_tmdb_tv(name: str):
     try:
         url = "https://api.themoviedb.org/3/search/tv"
-        params = {"api_key": TMDB_API_KEY, "query": name, "language": TMDB_LANG}
-        data = requests.get(url, params=params, timeout=10).json()
+
+        params = {
+            "api_key": TMDB_API_KEY,
+            "query": name,
+            "language": TMDB_LANG,   # zuerst de-DE
+        }
+
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+
         if not data.get("results"):
+            params_en = dict(params)
+            params_en["language"] = "en-US"
+            r = requests.get(url, params=params_en, timeout=10)
+            data = r.json()
+
+        if not data.get("results"):
+            print(f"[TMDB] tv search no result: name={name!r}")
             return None
+
         m = data["results"][0]
         tmdb_id = m.get("id")
         kinopoisk_url = f"https://www.themoviedb.org/tv/{tmdb_id}"
@@ -554,6 +616,15 @@ def fetch_tmdb_tv(name: str):
             params={"api_key": TMDB_API_KEY, "language": TMDB_LANG},
             timeout=10
         ).json()
+
+        if not (detail.get("overview", "") or "").strip():
+            detail_en = requests.get(
+                f"https://api.themoviedb.org/3/tv/{tmdb_id}",
+                params={"api_key": TMDB_API_KEY, "language": "en-US"},
+                timeout=10
+            ).json()
+            if (detail_en.get("overview", "") or "").strip():
+                detail = detail_en
 
         credits = requests.get(
             f"https://api.themoviedb.org/3/tv/{tmdb_id}/credits",
@@ -586,7 +657,7 @@ def fetch_tmdb_tv(name: str):
             "tmdb_id": tmdb_id,
             "poster": ("https://image.tmdb.org/t/p/w500" + m["poster_path"]) if m.get("poster_path") else "",
             "backdrop": ("https://image.tmdb.org/t/p/w780" + m["backdrop_path"]) if m.get("backdrop_path") else "",
-            "plot": m.get("overview", "") or "",
+            "plot": detail.get("overview", "") or "",
             "rating": str(m.get("vote_average", "") or ""),
             "release_date": m.get("first_air_date", "") or "",
             "cast": cast,
@@ -597,7 +668,8 @@ def fetch_tmdb_tv(name: str):
             "o_name": original_name,
             "kinopoisk_url": kinopoisk_url,
         }
-    except Exception:
+    except Exception as e:
+        print(f"[TMDB] fetch_tmdb_tv failed for {name!r}: {e}")
         return None
 
 def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
@@ -607,9 +679,22 @@ def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
         params = {"api_key": TMDB_API_KEY, "language": TMDB_LANG}
         data = requests.get(url, params=params, timeout=10).json()
 
+        if not data or data.get("success") is False:
+            print(f"[TMDB] episode detail failed: tv={tmdb_id} S{season:02d}E{episode:02d}")
+            return None
+
+        if not (data.get("overview", "") or "").strip():
+            params_en = dict(params)
+            params_en["language"] = "en-US"
+            data_en = requests.get(url, params=params_en, timeout=10).json()
+
+            if data_en and data_en.get("success") is not False:
+                if (data_en.get("overview", "") or "").strip():
+                    data = data_en
+
         # 2) Credits extra holen
         credits_url = f"https://api.themoviedb.org/3/tv/{tmdb_id}/season/{season}/episode/{episode}/credits"
-        credits = requests.get(credits_url, params=params, timeout=10).json()
+        credits = requests.get(credits_url, params={"api_key": TMDB_API_KEY}, timeout=10).json()
 
         crew_names = []
         for item in credits.get("crew", []):
@@ -625,7 +710,8 @@ def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
             "air_date": data.get("air_date", "") or "",
             "crew": crew_string,
         }
-    except Exception:
+    except Exception as e:
+        print(f"[TMDB] fetch_tmdb_episode failed for tv={tmdb_id} S{season:02d}E{episode:02d}: {e}")
         return None
 
 def strip_series_prefix(title: str, prefixes: list[str]) -> str:
@@ -2964,6 +3050,7 @@ EXT = {{".mkv", ".mp4", ".avi", ".mov", ".m4v"}}
 TMDB_API_KEY       = {TMDB_API_KEY}
 TMDB_BASE          = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE    = "https://image.tmdb.org/t/p/w500"
+TMDB_LANG          = "de-DE"
 
 def ensure_columns(con, table, wanted_cols):
     cur = con.cursor()
@@ -3018,7 +3105,7 @@ def init_db(con):
 
     # make sure path cols exist (older DBs etc.)
     ensure_columns(con, "vod", [("path", "TEXT")])
-    ensure_columns(con, "episodes", [("plot", "TEXT")])
+    ensure_columns(con, "episodes", [("plot", "TEXT"), ("crew", "TEXT")])
 
     con.commit()
 
@@ -3046,6 +3133,7 @@ def tmdb_search(kind: str, query: str, year: str | None = None):
         return None
     try:
         url = f"{{TMDB_BASE}}/search/{{kind}}"
+
         params = {{
             "api_key": TMDB_API_KEY,
             "query": query,
@@ -3054,15 +3142,34 @@ def tmdb_search(kind: str, query: str, year: str | None = None):
         }}
         if year:
             params["year"] = year
+
         r = requests.get(url, params=params, timeout=10)
         if r.status_code != 200:
+            print(f"[TMDB] de search failed: kind={{kind}} query={{query!r}} year={{year!r}} status={{r.status_code}}")
+        else:
+            data = r.json()
+            results = data.get("results") or []
+            if results:
+                return results[0]
+
+        # englischer Such-Fallback
+        params_en = dict(params)
+        params_en["language"] = "en-US"
+
+        r = requests.get(url, params=params_en, timeout=10)
+        if r.status_code != 200:
+            print(f"[TMDB] en search failed: kind={{kind}} query={{query!r}} year={{year!r}} status={{r.status_code}}")
             return None
+
         data = r.json()
         results = data.get("results") or []
         if not results:
+            print(f"[TMDB] no result: kind={{kind}} query={{query!r}} year={{year!r}}")
             return None
+
         return results[0]
-    except Exception:
+    except Exception as e:
+        print(f"[TMDB] tmdb_search exception: kind={{kind}} query={{query!r}} year={{year!r}} err={{e}}")
         return None
 
 def fetch_tmdb_credits(tmdb_id, kind="movie"):
@@ -3147,6 +3254,20 @@ def tmdb_movie_info(title: str, year: str | None = None):
         timeout=10
     ).json()
 
+    if not detail or detail.get("success") is False:
+        print(f"[TMDB] movie detail failed: tmdb_id={{tmdb_id}} title={{title!r}}")
+        return None
+
+    if not (detail.get("overview", "") or "").strip():
+        detail_en = requests.get(
+            f"{{TMDB_BASE}}/movie/{{tmdb_id}}",
+            params={{"api_key": TMDB_API_KEY, "language": "en-US"}},
+            timeout=10
+        ).json()
+        if detail_en and detail_en.get("success") is not False:
+            if (detail_en.get("overview", "") or "").strip():
+                detail = detail_en
+
     credits = requests.get(
         f"{{TMDB_BASE}}/movie/{{tmdb_id}}/credits",
         params={{"api_key": TMDB_API_KEY, "language": "de-DE"}},
@@ -3168,7 +3289,7 @@ def tmdb_movie_info(title: str, year: str | None = None):
         "tmdb_id": tmdb_id,
         "poster": (TMDB_IMAGE_BASE + m["poster_path"]) if m.get("poster_path") else None,
         "backdrop": (TMDB_IMAGE_BASE + m["backdrop_path"]) if m.get("backdrop_path") else None,
-        "plot": m.get("overview"),
+        "plot": detail.get("overview"),
         "rating": m.get("vote_average"),
         "release_date": m.get("release_date"),
         "cast": cast,
@@ -3190,7 +3311,21 @@ def tmdb_movie_info_by_id(tmdb_id: str):
     ).json()
 
     if not detail or detail.get("success") is False:
+        print(f"[TMDB] movie detail by id failed: tmdb_id={{tmdb_id}}")
         return None
+
+    if not (detail.get("overview", "") or "").strip():
+        detail_en = requests.get(
+            f"{{TMDB_BASE}}/movie/{{tmdb_id}}",
+            params={{"api_key": TMDB_API_KEY, "language": "en-US"}},
+            timeout=10
+        ).json()
+        if detail_en and detail_en.get("success") is not False:
+            if (detail_en.get("overview", "") or "").strip():
+                detail = detail_en
+
+        if not detail or detail.get("success") is False:
+            return None
 
     credits = requests.get(
         f"{{TMDB_BASE}}/movie/{{tmdb_id}}/credits",
@@ -3237,7 +3372,7 @@ def tmdb_tv_info(name: str):
     if not m:
         return None
     tmdb_id = m.get("id")
-    kinopoisk_url = f"https://www.themoviedb.org/movie/{{tmdb_id}}"
+    kinopoisk_url = f"https://www.themoviedb.org/tv/{{tmdb_id}}"
     original_name = m.get("original_name", "") or ""
 
     detail = requests.get(
@@ -3245,6 +3380,20 @@ def tmdb_tv_info(name: str):
         params={{"api_key": TMDB_API_KEY, "language": "de-DE"}},
         timeout=10
     ).json()
+
+    if not detail or detail.get("success") is False:
+        print(f"[TMDB] tv detail failed: tmdb_id={{tmdb_id}} name={{name!r}}")
+        return None
+
+    if not (detail.get("overview", "") or "").strip():
+        detail_en = requests.get(
+            f"{{TMDB_BASE}}/tv/{{tmdb_id}}",
+            params={{"api_key": TMDB_API_KEY, "language": "en-US"}},
+            timeout=10
+        ).json()
+        if detail_en and detail_en.get("success") is not False:
+            if (detail_en.get("overview", "") or "").strip():
+                detail = detail_en
 
     credits = requests.get(
         f"{{TMDB_BASE}}/tv/{{tmdb_id}}/credits",
@@ -3271,7 +3420,7 @@ def tmdb_tv_info(name: str):
         "tmdb_id": tmdb_id,
         "poster": (TMDB_IMAGE_BASE + m["poster_path"]) if m.get("poster_path") else None,
         "backdrop": (TMDB_IMAGE_BASE + m["backdrop_path"]) if m.get("backdrop_path") else None,
-        "plot": m.get("overview"),
+        "plot": detail.get("overview"),
         "rating": m.get("vote_average"),
         "release_date": m.get("first_air_date"),
         "cast": cast,
@@ -3287,7 +3436,20 @@ def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
     try:
         url = f"https://api.themoviedb.org/3/tv/{{tmdb_id}}/season/{{season}}/episode/{{episode}}"
         params = {{"api_key": TMDB_API_KEY, "language": TMDB_LANG}}
+
         data = requests.get(url, params=params, timeout=10).json()
+
+        if not data or data.get("success") is False:
+            print(f"[TMDB] episode detail failed: tv={{tmdb_id}} S{{season:02d}}E{{episode:02d}}")
+            return None
+
+        if not (data.get("overview", "") or "").strip():
+            params_en = dict(params)
+            params_en["language"] = "en-US"
+            data_en = requests.get(url, params=params_en, timeout=10).json()
+            if data_en and data_en.get("success") is not False:
+                if (data_en.get("overview", "") or "").strip():
+                    data = data_en
 
         credits_url = f"https://api.themoviedb.org/3/tv/{{tmdb_id}}/season/{{season}}/episode/{{episode}}/credits"
         credits = requests.get(credits_url, params=params, timeout=10).json()
@@ -3306,7 +3468,8 @@ def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
             "air_date": data.get("air_date", "") or "",
             "crew": crew_string,
         }}
-    except Exception:
+    except Exception as e:
+        print(f"[TMDB] fetch_tmdb_episode exception: tv={{tmdb_id}} S{{season:02d}}E{{episode:02d}} err={{e}}")
         return None
 
 def scan_vod():
@@ -3329,7 +3492,6 @@ def scan_vod():
                         year = None
                     vod.append((title, year, cat, str(f)))
     return vod
-
 
 ep_re = re.compile(r"S(\\d{{1,2}})E(\\d{{1,2}})", re.I)
 
@@ -3366,11 +3528,9 @@ def scan_series():
                 episodes.append((sname, season, ep, title, str(p)))
     return series, episodes
 
-
 def next_id(cur, table: str) -> int:
     cur.execute(f"SELECT COALESCE(MAX(id),0) FROM {{table}}")
     return int(cur.fetchone()[0] or 0) + 1
-
 
 def main():
     con = sqlite3.connect(DB)
@@ -3435,8 +3595,6 @@ def main():
         name_to_meta[name] = {{"id": sid, "tmdb_id": tmdb_id}}
         new_series += 1
         time.sleep(0.05)
-        new_series += 1
-        time.sleep(0.05)
 
     # --- EPISODES: only insert new by path ---
     for (sname, season, epnum, title, path) in episodes:
@@ -3476,7 +3634,6 @@ def main():
     con.close()
 
     print("OK NEW_VOD=%d NEW_SERIES=%d NEW_EPISODES=%d" % (new_vod, new_series, new_eps))
-
 
 if __name__ == "__main__":
     main()
