@@ -680,7 +680,6 @@ def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
         data = requests.get(url, params=params, timeout=10).json()
 
         if not data or data.get("success") is False:
-            print(f"[TMDB] episode detail failed: tv={tmdb_id} S{season:02d}E{episode:02d}")
             return None
 
         if not (data.get("overview", "") or "").strip():
@@ -3439,7 +3438,6 @@ def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
         data = requests.get(url, params=params, timeout=10).json()
 
         if not data or data.get("success") is False:
-            print(f"[TMDB] episode detail failed: tv={{tmdb_id}} S{{season:02d}}E{{episode:02d}}")
             return None
 
         if not (data.get("overview", "") or "").strip():
