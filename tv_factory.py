@@ -711,7 +711,6 @@ def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
             "crew": crew_string,
         }
     except Exception as e:
-        print(f"[TMDB] fetch_tmdb_episode failed for tv={tmdb_id} S{season:02d}E{episode:02d}: {e}")
         return None
 
 def strip_series_prefix(title: str, prefixes: list[str]) -> str:
@@ -3469,7 +3468,6 @@ def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
             "crew": crew_string,
         }}
     except Exception as e:
-        print(f"[TMDB] fetch_tmdb_episode exception: tv={{tmdb_id}} S{{season:02d}}E{{episode:02d}} err={{e}}")
         return None
 
 def scan_vod():
