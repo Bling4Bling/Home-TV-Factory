@@ -3109,7 +3109,6 @@ def init_db(con):
 
 
 def clean_title(s: str) -> str:
-    s = s.replace(" ").replace("_", " ").strip()
     s = re.sub(r"\\.(mkv|mp4|avi|m4v)$", "", s, flags=re.I)
     s = re.sub(r"^\\(\\d+\\)\\s*", "", s)
     # remove year like (1999) or 1999
