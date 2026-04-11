@@ -335,7 +335,7 @@ def clean_title(s: str) -> str:
     s = re.sub(r"^\(\d+\)\s*", "", s)
     s = re.sub(r"\((19|20)\d{2}\)", "", s)
     s = re.sub(r"\b(720p|1080p|2160p|x264|x265|bluray|web|webrip|hdrip|dv|hdr|ac3|dts)\b", "", s, flags=re.I)
-    s = re.sub(r"[._]", " ", s)
+    s = re.sub(r"[_]", " ", s)
     return " ".join(s.split()).strip()
 
 def extract_tmdb_id(name: str):
@@ -1217,7 +1217,7 @@ def build_epg_for_video_channel(ch: Channel, list_file: Path, now: datetime, end
         m = re.search(r'(S\d{2}E\d{2})', title, re.IGNORECASE)
         if m:
             ep = m.group(1)
-            rest = title.replace(ep, '').strip(" -._")
+            rest = title.replace(ep, '').strip(" -_")
             title = f"{rest} - {ep}" if rest else ep
 
         desc = get_epg_desc_for_file(ch, f)
@@ -3109,7 +3109,7 @@ def init_db(con):
 
 
 def clean_title(s: str) -> str:
-    s = s.replace(".", " ").replace("_", " ").strip()
+    s = s.replace(" ").replace("_", " ").strip()
     s = re.sub(r"\\.(mkv|mp4|avi|m4v)$", "", s, flags=re.I)
     s = re.sub(r"^\\(\\d+\\)\\s*", "", s)
     # remove year like (1999) or 1999
