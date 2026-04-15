@@ -192,6 +192,11 @@ SERIES_PREFIX_STRIP: dict[str, list[str]] = {
     # "Jaws": ["Jaws", "Der weiße Hai"],
 }
 
+SERIES_TMDB_FIX: dict[str, int] = {
+    "Malcolm mittendrin": 2004,
+    "Malcolm mittendrin Unfair wie immer": 279471,
+}
+
 # ---- Radio ----
 
 RADIOS = [
@@ -670,6 +675,68 @@ def fetch_tmdb_tv(name: str):
         }
     except Exception as e:
         print(f"[TMDB] fetch_tmdb_tv failed for {name!r}: {e}")
+        return None
+
+def fetch_tmdb_tv_by_id(tmdb_id: str | int):
+    try:
+        kinopoisk_url = f"https://www.themoviedb.org/tv/{tmdb_id}"
+
+        detail = requests.get(
+            f"https://api.themoviedb.org/3/tv/{tmdb_id}",
+            params={"api_key": TMDB_API_KEY, "language": TMDB_LANG},
+            timeout=10
+        ).json()
+
+        if not (detail.get("overview", "") or "").strip():
+            detail_en = requests.get(
+                f"https://api.themoviedb.org/3/tv/{tmdb_id}",
+                params={"api_key": TMDB_API_KEY, "language": "en-US"},
+                timeout=10
+            ).json()
+            if (detail_en.get("overview", "") or "").strip():
+                detail = detail_en
+
+        credits = requests.get(
+            f"https://api.themoviedb.org/3/tv/{tmdb_id}/credits",
+            params={"api_key": TMDB_API_KEY, "language": TMDB_LANG},
+            timeout=10
+        ).json()
+
+        director = ""
+        creators = detail.get("created_by", []) or []
+        if creators:
+            director = creators[0].get("name", "") or ""
+        else:
+            for person in credits.get("crew", []):
+                if person.get("job") in ("Executive Producer", "Director"):
+                    director = person.get("name", "") or ""
+                    break
+
+        genres = ", ".join(
+            g.get("name", "") for g in detail.get("genres", []) if g.get("name")
+        )
+
+        countries = ", ".join(detail.get("origin_country", []) or [])
+
+        cast = fetch_tmdb_credits(int(tmdb_id), "tv")
+        trailer = fetch_tmdb_trailer(int(tmdb_id), "tv")
+
+        return {
+            "tmdb_id": int(tmdb_id),
+            "poster": ("https://image.tmdb.org/t/p/w500" + detail["poster_path"]) if detail.get("poster_path") else "",
+            "backdrop": ("https://image.tmdb.org/t/p/w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
+            "plot": detail.get("overview", "") or "",
+            "rating": str(detail.get("vote_average", "") or ""),
+            "release_date": detail.get("first_air_date", "") or "",
+            "cast": cast,
+            "trailer": trailer,
+            "director": director,
+            "genre": genres,
+            "country": countries,
+            "o_name": detail.get("original_name", "") or "",
+            "kinopoisk_url": kinopoisk_url,
+        }
+    except Exception:
         return None
 
 def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
@@ -2023,7 +2090,7 @@ if ($action === "get_vod_streams") {
       "rating_5based" => (string)round(((float)($r["rating"] ?? 0)) / 2, 1),
       "tmdb" => (string)($r["tmdb_id"] ?? ""),
       "trailer" => "",
-      "added" => (string)time(),
+      "added" => (string)(filemtime($r["path"] ?? "") ?: time()),
       "is_adult" => "0",
       "category_id" => "1",
       "container_extension" => $ext,
@@ -2088,7 +2155,7 @@ if ($action === "get_vod_info") {
       "stream_id" => (int)$r["id"],
       "name" => (string)$r["title"],
       "o_name" => (string)($r["o_name"] ?? ""),
-      "added" => (string)time(),
+      "added" => (string)(filemtime($r["path"] ?? "") ?: time()),
       "category_id" => "1",
       "container_extension" => extOf((string)($r["path"] ?? ""), "mp4")
     ]
@@ -2131,6 +2198,38 @@ if ($action === "get_series") {
   $st->execute($params);
   $rows = $st->fetchAll();
 
+  foreach ($rows as &$r) {
+      $seriesAdded = 0;
+
+      $stEp = $pdo->prepare("
+          SELECT path
+          FROM episodes
+          WHERE series_id = :sid
+      ");
+      $stEp->execute([":sid" => (int)$r["id"]]);
+
+      while ($epRow = $stEp->fetch(PDO::FETCH_ASSOC)) {
+          $epPath = (string)($epRow["path"] ?? "");
+          if ($epPath !== "" && file_exists($epPath)) {
+              $t = filemtime($epPath);
+              if ($t > $seriesAdded) {
+                  $seriesAdded = $t;
+              }
+          }
+      }
+
+      if ($seriesAdded <= 0) {
+          $seriesAdded = time();
+      }
+
+      $r["_series_added"] = $seriesAdded;
+  }
+  unset($r);
+
+  usort($rows, function($a, $b) {
+      return ($b["_series_added"] ?? 0) <=> ($a["_series_added"] ?? 0);
+  });
+
   $outSeries = [];
   $n=1;
   foreach ($rows as $r) {
@@ -2163,7 +2262,9 @@ if ($action === "get_series") {
       "tmdb" => (string)($r["tmdb_id"] ?? ""),
       "kinopoisk_url" => (string)($r["kinopoisk_url"] ?? ""),
       "series_id" => (int)$r["id"],
-      "category_id" => "0"
+      "category_id" => "0",
+      "added" => (string)($r["_series_added"] ?? time()),
+      "last_modified" => (string)($r["_series_added"] ?? time())
     ];
   }
   out($outSeries);
@@ -2233,6 +2334,7 @@ if ($action === "get_series_info") {
     "id" => (string)$eid,
     "episode_num" => $epnum,
     "title" => (string)($ep["title"] ?? ""),
+    "path" => (string)($ep["path"] ?? ""),
     "container_extension" => $ext,
     "info" => [
         "air_date" => (string)($ep["air_date"] ?? ($row["release_date"] ?? "")),
@@ -2244,7 +2346,7 @@ if ($action === "get_series_info") {
         "duration" => (string)($ep["duration"] ?? "")
     ],
     "custom_sid" => null,
-    "added" => (string)time(),
+    "added" => (string)((!empty($ep["path"]) && file_exists($ep["path"])) ? filemtime($ep["path"]) : time()),
     "season" => $season,
     "direct_source" => "",
     "stream_id" => $eid
@@ -2271,6 +2373,29 @@ if ($action === "get_series_info") {
 
   $episodes = count($grouped) ? $grouped : new stdClass();
 
+  $lastModified = 0;
+
+  if (is_array($episodes)) {
+      foreach ($episodes as $seasonEpisodes) {
+          if (!is_array($seasonEpisodes)) {
+              continue;
+          }
+
+          foreach ($seasonEpisodes as $ep) {
+              if (!empty($ep["path"]) && file_exists($ep["path"])) {
+                  $t = filemtime($ep["path"]);
+                  if ($t > $lastModified) {
+                      $lastModified = $t;
+                  }
+              }
+          }
+      }
+  }
+
+  if ($lastModified <= 0) {
+      $lastModified = time();
+  }
+
   out([
     "seasons" => $seasons,
     "info" => [
@@ -2282,7 +2407,7 @@ if ($action === "get_series_info") {
       "genre" => (string)($row["genre"] ?? ""),
       "releaseDate" => (string)($row["release_date"] ?? ""),
       "release_date" => (string)($row["release_date"] ?? ""),
-      "last_modified" => (string)time(),
+      "last_modified" => (string)$lastModified,
       "rating" => (string)($row["rating"] ?? ""),
       "rating_5based" => (string)round(((float)$row["rating"] ?? 0) /2, 1),
       "backdrop_path" => ((string)($row["backdrop"] ?? "") !== "") ? [ (string)$row["backdrop"] ] : [],
@@ -2727,21 +2852,18 @@ def scan_series_sqlite() -> tuple[int, int]:
             cur.execute("SELECT id FROM series WHERE name=?", (sname,))
             row = cur.fetchone()
 
-            cur.execute("SELECT id FROM series WHERE name=?", (sname,))
-            row = cur.fetchone()
+            fixed_tmdb_id = SERIES_TMDB_FIX.get(sname)
 
             if row:
                 current_series_id = row[0]
                 tmdb = None
             else:
-                tmdb = fetch_tmdb_tv(clean_title(sname))
+                if fixed_tmdb_id:
+                    tmdb = fetch_tmdb_tv_by_id(fixed_tmdb_id)
+                else:
+                    tmdb = fetch_tmdb_tv(clean_title(sname))
 
-            cur.execute("SELECT id FROM series WHERE name=?", (sname,))
-            row = cur.fetchone()
-
-            if row:
-                current_series_id = row[0]
-            else:
+            if not row:
                 if tmdb:
                     cur.execute(
                         "INSERT INTO series(id,name,o_name,kinopoisk_url,cat,tmdb_id,poster,backdrop,plot,rating,release_date,cast,trailer,director,genre,country) "
@@ -3050,6 +3172,11 @@ TMDB_BASE          = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE    = "https://image.tmdb.org/t/p/w500"
 TMDB_LANG          = "de-DE"
 
+SERIES_TMDB_FIX = {{
+    "Malcolm mittendrin": 2004,
+    "Malcolm mittendrin unfair wie immer": 123456,
+}}
+
 def ensure_columns(con, table, wanted_cols):
     cur = con.cursor()
     cur.execute(f"PRAGMA table_info({{table}})")
@@ -3106,7 +3233,6 @@ def init_db(con):
     ensure_columns(con, "episodes", [("plot", "TEXT"), ("crew", "TEXT")])
 
     con.commit()
-
 
 def clean_title(s: str) -> str:
     s = re.sub(r"\\.(mkv|mp4|avi|m4v)$", "", s, flags=re.I)
@@ -3429,6 +3555,68 @@ def tmdb_tv_info(name: str):
         "kinopoisk_url": kinopoisk_url
     }}
 
+def fetch_tmdb_tv_by_id(tmdb_id: str | int):
+    try:
+        kinopoisk_url = f"https://www.themoviedb.org/tv/{{tmdb_id}}"
+
+        detail = requests.get(
+            f"https://api.themoviedb.org/3/tv/{{tmdb_id}}",
+            params={{"api_key": TMDB_API_KEY, "language": TMDB_LANG}},
+            timeout=10
+        ).json()
+
+        if not (detail.get("overview", "") or "").strip():
+            detail_en = requests.get(
+                f"https://api.themoviedb.org/3/tv/{{tmdb_id}}",
+                params={{"api_key": TMDB_API_KEY, "language": "en-US"}},
+                timeout=10
+            ).json()
+            if (detail_en.get("overview", "") or "").strip():
+                detail = detail_en
+
+        credits = requests.get(
+            f"https://api.themoviedb.org/3/tv/{{tmdb_id}}/credits",
+            params={{"api_key": TMDB_API_KEY, "language": TMDB_LANG}},
+            timeout=10
+        ).json()
+
+        director = ""
+        creators = detail.get("created_by", []) or []
+        if creators:
+            director = creators[0].get("name", "") or ""
+        else:
+            for person in credits.get("crew", []):
+                if person.get("job") in ("Executive Producer", "Director"):
+                    director = person.get("name", "") or ""
+                    break
+
+        genres = ", ".join(
+            g.get("name", "") for g in detail.get("genres", []) if g.get("name")
+        )
+
+        countries = ", ".join(detail.get("origin_country", []) or [])
+
+        cast = fetch_tmdb_credits(int(tmdb_id), "tv")
+        trailer = fetch_tmdb_trailer(int(tmdb_id), "tv")
+
+        return {{
+            "tmdb_id": int(tmdb_id),
+            "poster": ("https://image.tmdb.org/t/p/w500" + detail["poster_path"]) if detail.get("poster_path") else "",
+            "backdrop": ("https://image.tmdb.org/t/p/w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
+            "plot": detail.get("overview", "") or "",
+            "rating": str(detail.get("vote_average", "") or ""),
+            "release_date": detail.get("first_air_date", "") or "",
+            "cast": cast,
+            "trailer": trailer,
+            "director": director,
+            "genre": genres,
+            "country": countries,
+            "o_name": detail.get("original_name", "") or "",
+            "kinopoisk_url": kinopoisk_url,
+        }}
+    except Exception:
+        return None    
+
 def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
     try:
         url = f"https://api.themoviedb.org/3/tv/{{tmdb_id}}/season/{{season}}/episode/{{episode}}"
@@ -3575,7 +3763,12 @@ def main():
             continue
 
         sid = next_id(cur, "series")
-        info = tmdb_tv_info(name)
+        fixed_tmdb_id = SERIES_TMDB_FIX.get(name)
+
+        if fixed_tmdb_id:
+            info = fetch_tmdb_tv_by_id(fixed_tmdb_id)
+        else:
+            info = tmdb_tv_info(name)
 
         if info:
             cur.execute(
