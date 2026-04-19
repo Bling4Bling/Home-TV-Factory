@@ -87,7 +87,6 @@ VIDEO_EXTS = {".mkv", ".mp4", ".ts", ".m4v", ".avi"}
 YEAR_RE = re.compile(r"(19\d{2}|20\d{2})")
 SXXEYY_RE = re.compile(r"(?:s(\d{1,2})e(\d{1,2}))", re.IGNORECASE)
 SAFE_CHARS_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
-CATEGORY = "Serien"
 
 # ---- Fallback falls ffprobe spinnt ----
 FALLBACK_MIN = 22
@@ -175,7 +174,7 @@ SERIES_PREFIX_STRIP: dict[str, list[str]] = {
     "King of Queens": ["King of Queens", "King of Queens", "King of Queens"],
     "Mocro Maffia": ["Mocro Maffia", "Mocro Maffia", "Mocro Maffia"],
     "South Park": ["South Park", "South Park:", "South Park"],
-    "Hoer mal wer da haemmert": ["Hör mal wer da hämmert", "Hoer mal wer da haemmert", "Hör mal wer da hämmert"],
+    "Tool Time": ["Hör mal wer da hämmert", "Hoer mal wer da haemmert", "Hör mal, wer da hämmert"],
     "American Dad": ["American Dad", "American Dad", "American Dad"],
     "Band of Brothers": ["Band of Brothers", "Band of Brothers", "Band of Brothers"],
     "The Big Bang Theory": ["The Big Bang Theory", "The Big Bang Theory", "The Big Bang Theory"],
@@ -187,14 +186,16 @@ SERIES_PREFIX_STRIP: dict[str, list[str]] = {
     "Breaking Bad": ["Breaking Bad", "Breaking Bad", "Breaking Bad"],
     "Der Prinz von Bel Air": ["Der Prinz von Bel Air", "Der Prinz von Bel Air", "Der Prinz von Bel-Air"],
     "Malcolm mittendrin": ["Malcolm mittendrin", "Malcolm mittendrin", "Malcolm mittendrin"],
+    "Alf": ["Alf", "Alf", "Alf"],
+    "Shameless": ["Shameless Nicht ganz nüchtern", "Shameless Nicht ganz nüchtern"],
+    "Top Gear": ["Top Gear", "Top Gear", "Top Gear"],
     # Beispiele:
     # "Star Wars": ["Star Wars"],
     # "Jaws": ["Jaws", "Der weiße Hai"],
 }
 
 SERIES_TMDB_FIX: dict[str, int] = {
-    "Malcolm mittendrin": 2004,
-    "Malcolm mittendrin Unfair wie immer": 279471,
+    "Malcolm mittendrin": 2004, "Malcolm mittendrin Unfair wie immer": 279471, "Tool Time": 1558, "Shameless": 34307,
 }
 
 # ---- Radio ----
@@ -453,7 +454,6 @@ def fetch_tmdb(title: str, year: str | None = None):
         m = data["results"][0]
         tmdb_id = m.get("id")
         kinopoisk_url = f"https://www.themoviedb.org/movie/{tmdb_id}"
-        original_title = m.get("original_title", "") or ""
 
         detail = requests.get(
             f"https://api.themoviedb.org/3/movie/{tmdb_id}",
@@ -474,7 +474,7 @@ def fetch_tmdb(title: str, year: str | None = None):
 
             if detail_en and detail_en.get("success") is not False:
                 if (detail_en.get("overview", "") or "").strip():
-                    detail = detail_en
+                    detail["overview"] = detail_en.get("overview", "")
 
         credits = requests.get(
             f"https://api.themoviedb.org/3/movie/{tmdb_id}/credits",
@@ -503,17 +503,18 @@ def fetch_tmdb(title: str, year: str | None = None):
 
         return {
             "tmdb_id": tmdb_id,
-            "poster": (TMDB_IMAGE_BASE + "w500" + m["poster_path"]) if m.get("poster_path") else "",
-            "backdrop": (TMDB_IMAGE_BASE + "w780" + m["backdrop_path"]) if m.get("backdrop_path") else "",
+            "name": detail.get("title") or m.get("title") or title or "",
+            "o_name": detail.get("original_title") or m.get("original_title") or "",
+            "poster": (TMDB_IMAGE_BASE + "w500" + detail["poster_path"]) if detail.get("poster_path") else "",
+            "backdrop": (TMDB_IMAGE_BASE + "w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
             "plot": detail.get("overview", "") or "",
-            "rating": str(m.get("vote_average", "") or ""),
-            "release_date": m.get("release_date", "") or "",
+            "rating": str(detail.get("vote_average", "") or ""),
+            "release_date": detail.get("release_date", "") or "",
             "cast": cast,
             "trailer": trailer,
             "director": director,
             "genre": genres,
             "country": countries,
-            "o_name": original_title,
             "kinopoisk_url": kinopoisk_url,
         }
     except Exception as e:
@@ -543,7 +544,7 @@ def fetch_tmdb_by_id(tmdb_id: str):
 
             if detail_en and detail_en.get("success") is not False:
                 if (detail_en.get("overview", "") or "").strip():
-                    detail = detail_en
+                    detail["overview"] = detail_en.get("overview", "")
 
         credits = requests.get(
             f"https://api.themoviedb.org/3/movie/{tmdb_id}/credits",
@@ -570,6 +571,8 @@ def fetch_tmdb_by_id(tmdb_id: str):
 
         return {
             "tmdb_id": int(tmdb_id),
+            "name": detail.get("title") or "",
+            "o_name": detail.get("original_title") or "",
             "poster": (TMDB_IMAGE_BASE + "w500" + detail["poster_path"]) if detail.get("poster_path") else "",
             "backdrop": (TMDB_IMAGE_BASE + "w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
             "plot": detail.get("overview", "") or "",
@@ -580,7 +583,6 @@ def fetch_tmdb_by_id(tmdb_id: str):
             "director": director,
             "genre": genres,
             "country": countries,
-            "o_name": detail.get("original_title", "") or "",
             "kinopoisk_url": kinopoisk_url,
         }
     except Exception as e:
@@ -614,7 +616,6 @@ def fetch_tmdb_tv(name: str):
         m = data["results"][0]
         tmdb_id = m.get("id")
         kinopoisk_url = f"https://www.themoviedb.org/tv/{tmdb_id}"
-        original_name = m.get("original_name", "") or ""
 
         detail = requests.get(
             f"https://api.themoviedb.org/3/tv/{tmdb_id}",
@@ -629,7 +630,7 @@ def fetch_tmdb_tv(name: str):
                 timeout=10
             ).json()
             if (detail_en.get("overview", "") or "").strip():
-                detail = detail_en
+                detail["overview"] = detail_en.get("overview", "")
 
         credits = requests.get(
             f"https://api.themoviedb.org/3/tv/{tmdb_id}/credits",
@@ -660,17 +661,18 @@ def fetch_tmdb_tv(name: str):
 
         return {
             "tmdb_id": tmdb_id,
-            "poster": ("https://image.tmdb.org/t/p/w500" + m["poster_path"]) if m.get("poster_path") else "",
-            "backdrop": ("https://image.tmdb.org/t/p/w780" + m["backdrop_path"]) if m.get("backdrop_path") else "",
+            "name": detail.get("name") or m.get("name") or name or "",
+            "o_name": detail.get("original_name") or m.get("original_name") or "",
+            "poster": ("https://image.tmdb.org/t/p/w500" + detail["poster_path"]) if detail.get("poster_path") else "",
+            "backdrop": ("https://image.tmdb.org/t/p/w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
             "plot": detail.get("overview", "") or "",
-            "rating": str(m.get("vote_average", "") or ""),
-            "release_date": m.get("first_air_date", "") or "",
+            "rating": str(detail.get("vote_average", "") or ""),
+            "release_date": detail.get("first_air_date", "") or "",
             "cast": cast,
             "trailer": trailer,
             "director": director,
             "genre": genres,
             "country": countries,
-            "o_name": original_name,
             "kinopoisk_url": kinopoisk_url,
         }
     except Exception as e:
@@ -694,7 +696,7 @@ def fetch_tmdb_tv_by_id(tmdb_id: str | int):
                 timeout=10
             ).json()
             if (detail_en.get("overview", "") or "").strip():
-                detail = detail_en
+                detail["overview"] = detail_en.get("overview", "")
 
         credits = requests.get(
             f"https://api.themoviedb.org/3/tv/{tmdb_id}/credits",
@@ -723,6 +725,8 @@ def fetch_tmdb_tv_by_id(tmdb_id: str | int):
 
         return {
             "tmdb_id": int(tmdb_id),
+            "name": detail.get("name") or "",
+            "o_name": detail.get("original_name") or "",
             "poster": ("https://image.tmdb.org/t/p/w500" + detail["poster_path"]) if detail.get("poster_path") else "",
             "backdrop": ("https://image.tmdb.org/t/p/w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
             "plot": detail.get("overview", "") or "",
@@ -733,7 +737,6 @@ def fetch_tmdb_tv_by_id(tmdb_id: str | int):
             "director": director,
             "genre": genres,
             "country": countries,
-            "o_name": detail.get("original_name", "") or "",
             "kinopoisk_url": kinopoisk_url,
         }
     except Exception:
@@ -863,6 +866,16 @@ def ensure_dir(p: Path, mode: int = 0o775) -> None:
 
 def slugify(s: str) -> str:
     s = s.strip().lower()
+
+    # Umlaute / ß sauber umschreiben
+    s = (
+        s.replace("ä", "ae")
+         .replace("ö", "oe")
+         .replace("ü", "ue")
+         .replace("ß", "ss")
+    )
+
+    # Leerzeichen raus, Rest auf safe chars begrenzen
     s = SAFE_CHARS_RE.sub("", s.replace(" ", ""))
     return s or "channel"
 
@@ -2103,10 +2116,12 @@ if ($action === "get_vod_info") {
   $vid = (string)($_GET["vod_id"] ?? $_GET["stream_id"] ?? "");
   if ($vid === "" || !ctype_digit($vid)) out(["info"=>new stdClass(),"movie_data"=>new stdClass()]);
 
-  $st = $pdo->prepare("SELECT id, title, o_name, kinopoisk_url, tmdb_id, poster, plot, rating, release_date, backdrop, `cast`, `trailer`, director, genre, country FROM vod WHERE id=:id LIMIT 1");
+  $st = $pdo->prepare("SELECT id, title, o_name, kinopoisk_url, tmdb_id, poster, plot, rating, release_date, backdrop, `cast`, `trailer`, director, genre, country, path FROM vod WHERE id=:id LIMIT 1");
   $st->execute([":id" => (int)$vid]);
   $r = $st->fetch();
   if (!$r) out(["info"=>new stdClass(),"movie_data"=>new stdClass()]);
+
+  $ext = extOf((string)($r["path"] ?? ""), "mp4");
 
   $castArray = json_decode((string)($r["cast"] ?? "[]"), true);
   if (!is_array($castArray)) $castArray = [];
@@ -2147,8 +2162,7 @@ if ($action === "get_vod_info") {
       "rating_5based" => (string)round(((float)($r["rating"] ?? 0)) / 2, 1),
       "country" => (string)($r["country"] ?? ""),
       "genre" => (string)($r["genre"] ?? ""),
-      "backdrop_path" => ((string)($r["backdrop"] ?? "") !== "") ? [(string)$r["backdrop"]] : [],
-      "cast_array" => $castArray
+      "backdrop_path" => ((string)($r["backdrop"] ?? "") !== "") ? [(string)$r["backdrop"]] : []
     ],
     "movie_data" => [
       "stream_id" => (int)$r["id"],
@@ -2156,7 +2170,7 @@ if ($action === "get_vod_info") {
       "o_name" => (string)($r["o_name"] ?? ""),
       "added" => (string)(filemtime($r["path"] ?? "") ?: time()),
       "category_id" => "1",
-      "container_extension" => extOf((string)($r["path"] ?? ""), "mp4")
+      "container_extension" => $ext
     ]
   ]);
 }
@@ -2248,6 +2262,7 @@ if ($action === "get_series") {
     $outSeries[] = [
       "num" => $n++,
       "name" => (string)$r["name"],
+      "o_name" => (string)($r["o_name"] ?? ""),
       "cover" => (string)($r["poster"] ?? ""),
       "plot" => (string)($r["plot"] ?? ""),
       "cast" => $namesString,
@@ -2399,6 +2414,7 @@ if ($action === "get_series_info") {
     "seasons" => $seasons,
     "info" => [
       "name" => (string)$row["name"],
+      "o_name" => (string)($row["o_name"] ?? ""),
       "cover" => (string)($row["poster"] ?? ""),
       "plot" => (string)($row["plot"] ?? ""),
       "cast" => $namesString,
@@ -2800,7 +2816,7 @@ def scan_vod_sqlite() -> int:
             if tmdb:
                 cur.execute(
                     "INSERT INTO vod(id,title,o_name,kinopoisk_url,cat,path,tmdb_id,poster,backdrop,plot,rating,release_date,cast,trailer,director,genre,country) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (vid, clean_title_db, tmdb.get("o_name", ""), tmdb.get("kinopoisk_url", ""), cat, path, tmdb["tmdb_id"], tmdb["poster"], tmdb["backdrop"],
+                    (vid, tmdb.get("name", "") or clean_title_db, tmdb.get("o_name", ""), tmdb.get("kinopoisk_url", ""), cat, path, tmdb["tmdb_id"], tmdb["poster"], tmdb["backdrop"],
                      tmdb["plot"], tmdb["rating"], tmdb["release_date"], tmdb.get("cast", ""), tmdb.get("trailer", ""), tmdb.get("director", ""), tmdb.get("genre", ""), tmdb.get("country", ""))
                 )
                 time.sleep(0.05)
@@ -2869,7 +2885,7 @@ def scan_series_sqlite() -> tuple[int, int]:
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             series_id,
-                            sname,
+                            tmdb.get("name", "") or sname,
                             tmdb.get("o_name", ""),
                             tmdb.get("kinopoisk_url", ""),
                             cat,
@@ -3368,7 +3384,6 @@ def tmdb_movie_info(title: str, year: str | None = None):
         return None
     tmdb_id = m.get("id")
     kinopoisk_url = f"https://www.themoviedb.org/movie/{{tmdb_id}}"
-    original_title = m.get("original_title", "") or ""
 
     detail = requests.get(
         f"{{TMDB_BASE}}/movie/{{tmdb_id}}",
@@ -3388,7 +3403,7 @@ def tmdb_movie_info(title: str, year: str | None = None):
         ).json()
         if detail_en and detail_en.get("success") is not False:
             if (detail_en.get("overview", "") or "").strip():
-                detail = detail_en
+                detail["overview"] = detail_en.get("overview", "")
 
     credits = requests.get(
         f"{{TMDB_BASE}}/movie/{{tmdb_id}}/credits",
@@ -3409,17 +3424,18 @@ def tmdb_movie_info(title: str, year: str | None = None):
     trailer = fetch_tmdb_trailer(tmdb_id, "movie")
     return {{
         "tmdb_id": tmdb_id,
-        "poster": (TMDB_IMAGE_BASE + m["poster_path"]) if m.get("poster_path") else None,
-        "backdrop": (TMDB_IMAGE_BASE + m["backdrop_path"]) if m.get("backdrop_path") else None,
+        "name": detail.get("title") or m.get("title") or title or "",
+        "o_name": detail.get("original_title") or m.get("original_title") or "",
+        "poster": (TMDB_IMAGE_BASE + detail["poster_path"]) if detail.get("poster_path") else None,
+        "backdrop": (TMDB_IMAGE_BASE + detail["backdrop_path"]) if detail.get("backdrop_path") else None,
         "plot": detail.get("overview"),
-        "rating": m.get("vote_average"),
-        "release_date": m.get("release_date"),
+        "rating": detail.get("vote_average"),
+        "release_date": detail.get("release_date"),
         "cast": cast,
         "trailer": trailer,
         "director": director,
         "genre": genres,
         "country": country,
-        "o_name": original_title,
         "kinopoisk_url": kinopoisk_url
     }}
 
@@ -3444,7 +3460,7 @@ def tmdb_movie_info_by_id(tmdb_id: str):
         ).json()
         if detail_en and detail_en.get("success") is not False:
             if (detail_en.get("overview", "") or "").strip():
-                detail = detail_en
+                detail["overview"] = detail_en.get("overview", "")
 
         if not detail or detail.get("success") is False:
             return None
@@ -3474,6 +3490,8 @@ def tmdb_movie_info_by_id(tmdb_id: str):
 
     return {{
         "tmdb_id": int(tmdb_id),
+        "name": detail.get("title") or "",
+        "o_name": detail.get("original_title") or "",
         "poster": (TMDB_IMAGE_BASE + detail["poster_path"]) if detail.get("poster_path") else "",
         "backdrop": (TMDB_IMAGE_BASE + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
         "plot": detail.get("overview", "") or "",
@@ -3484,7 +3502,6 @@ def tmdb_movie_info_by_id(tmdb_id: str):
         "director": director,
         "genre": genres,
         "country": countries,
-        "o_name": detail.get("original_title", "") or "",
         "kinopoisk_url": kinopoisk_url,
     }}
 
@@ -3495,7 +3512,6 @@ def tmdb_tv_info(name: str):
         return None
     tmdb_id = m.get("id")
     kinopoisk_url = f"https://www.themoviedb.org/tv/{{tmdb_id}}"
-    original_name = m.get("original_name", "") or ""
 
     detail = requests.get(
         f"{{TMDB_BASE}}/tv/{{tmdb_id}}",
@@ -3515,7 +3531,7 @@ def tmdb_tv_info(name: str):
         ).json()
         if detail_en and detail_en.get("success") is not False:
             if (detail_en.get("overview", "") or "").strip():
-                detail = detail_en
+                detail["overview"] = detail_en.get("overview", "")
 
     credits = requests.get(
         f"{{TMDB_BASE}}/tv/{{tmdb_id}}/credits",
@@ -3540,17 +3556,18 @@ def tmdb_tv_info(name: str):
     trailer = fetch_tmdb_trailer(tmdb_id, "tv")
     return {{
         "tmdb_id": tmdb_id,
-        "poster": (TMDB_IMAGE_BASE + m["poster_path"]) if m.get("poster_path") else None,
-        "backdrop": (TMDB_IMAGE_BASE + m["backdrop_path"]) if m.get("backdrop_path") else None,
+        "name": detail.get("name") or m.get("name") or name or "",
+        "o_name": detail.get("original_name") or m.get("original_name") or "",
+        "poster": (TMDB_IMAGE_BASE + detail["poster_path"]) if detail.get("poster_path") else None,
+        "backdrop": (TMDB_IMAGE_BASE + detail["backdrop_path"]) if detail.get("backdrop_path") else None,
         "plot": detail.get("overview"),
-        "rating": m.get("vote_average"),
-        "release_date": m.get("first_air_date"),
+        "rating": detail.get("vote_average"),
+        "release_date": detail.get("first_air_date"),
         "cast": cast,
         "trailer": trailer,
         "director": director,
         "genre": genres,
         "country": country,
-        "o_name": original_name,
         "kinopoisk_url": kinopoisk_url
     }}
 
@@ -3571,7 +3588,7 @@ def fetch_tmdb_tv_by_id(tmdb_id: str | int):
                 timeout=10
             ).json()
             if (detail_en.get("overview", "") or "").strip():
-                detail = detail_en
+                detail["overview"] = detail_en.get("overview", "")
 
         credits = requests.get(
             f"https://api.themoviedb.org/3/tv/{{tmdb_id}}/credits",
@@ -3600,6 +3617,8 @@ def fetch_tmdb_tv_by_id(tmdb_id: str | int):
 
         return {{
             "tmdb_id": int(tmdb_id),
+            "name": detail.get("name") or "",
+            "o_name": detail.get("original_name") or "",
             "poster": ("https://image.tmdb.org/t/p/w500" + detail["poster_path"]) if detail.get("poster_path") else "",
             "backdrop": ("https://image.tmdb.org/t/p/w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
             "plot": detail.get("overview", "") or "",
@@ -3610,11 +3629,10 @@ def fetch_tmdb_tv_by_id(tmdb_id: str | int):
             "director": director,
             "genre": genres,
             "country": countries,
-            "o_name": detail.get("original_name", "") or "",
             "kinopoisk_url": kinopoisk_url,
         }}
     except Exception:
-        return None    
+        return None
 
 def fetch_tmdb_episode(tmdb_id: int, season: int, episode: int):
     try:
@@ -3659,9 +3677,29 @@ def scan_vod():
     for root in VOD_ROOTS:
         if not root.is_dir():
             continue
-        for catdir in sorted(root.iterdir()):
+
+        entries = sorted(root.iterdir())
+
+        # 1) Direkt Dateien im Root zulassen
+        direct_files = [f for f in entries if f.is_file() and f.suffix.lower() in EXT]
+        for f in direct_files:
+            cat = "Filme"
+
+            m2 = re.match(r"^(.*)\((\d{{4}})\)$", f.stem.strip())
+            if m2:
+                title = m2.group(1).strip()
+                year = m2.group(2)
+            else:
+                title = f.stem.strip()
+                year = None
+
+            vod.append((title, year, cat, str(f)))
+
+        # 2) Zusätzlich weiterhin Unterordner als Kategorien scannen
+        for catdir in entries:
             if not catdir.is_dir():
                 continue
+
             cat = catdir.name
             for f in sorted(catdir.glob("*")):
                 if f.is_file() and f.suffix.lower() in EXT:
@@ -3672,7 +3710,9 @@ def scan_vod():
                     else:
                         title = f.stem.strip()
                         year = None
+
                     vod.append((title, year, cat, str(f)))
+
     return vod
 
 ep_re = re.compile(r"S(\\d{{1,2}})E(\\d{{1,2}})", re.I)
@@ -3740,7 +3780,7 @@ def main():
         if info:
             cur.execute(
                 "INSERT INTO vod(id,title,o_name,kinopoisk_url,cat,path,tmdb_id,poster,backdrop,plot,rating,release_date,cast,trailer,director,genre,country) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (vid, clean_title_db, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, path, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""),info.get("country", ""))
+                (vid, info.get("name", "") or clean_title_db, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, path, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""),info.get("country", ""))
             )
         else:
             cur.execute(
@@ -3772,7 +3812,7 @@ def main():
         if info:
             cur.execute(
                 "INSERT INTO series(id,name,o_name,kinopoisk_url,cat,tmdb_id,poster,backdrop,plot,rating,release_date,cast,trailer,director,genre,country) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (sid, name, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""), info.get("country", ""))
+                (sid, info.get("name", "") or name, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""), info.get("country", ""))
             )
             tmdb_id = info["tmdb_id"]
         else:
