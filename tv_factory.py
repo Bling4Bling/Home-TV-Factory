@@ -90,6 +90,8 @@ SAFE_CHARS_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
 
 # ---- Fallback falls ffprobe spinnt ----
 FALLBACK_MIN = 22
+
+# ---- EPG Anzahl der Tage ----
 DAYS_AHEAD   = 8
 
 # ---- Ordnernamen (Kanalnamen), die nach Jahr sortiert werden sollen ----
@@ -504,7 +506,7 @@ def fetch_tmdb(title: str, year: str | None = None):
         return {
             "tmdb_id": tmdb_id,
             "name": detail.get("title") or m.get("title") or title or "",
-            "o_name": detail.get("original_title") or m.get("original_title") or "",
+            "o_name": detail.get("title") or m.get("original_title") or "",
             "poster": (TMDB_IMAGE_BASE + "w500" + detail["poster_path"]) if detail.get("poster_path") else "",
             "backdrop": (TMDB_IMAGE_BASE + "w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
             "plot": detail.get("overview", "") or "",
@@ -572,7 +574,7 @@ def fetch_tmdb_by_id(tmdb_id: str):
         return {
             "tmdb_id": int(tmdb_id),
             "name": detail.get("title") or "",
-            "o_name": detail.get("original_title") or "",
+            "o_name": detail.get("title") or "",
             "poster": (TMDB_IMAGE_BASE + "w500" + detail["poster_path"]) if detail.get("poster_path") else "",
             "backdrop": (TMDB_IMAGE_BASE + "w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
             "plot": detail.get("overview", "") or "",
@@ -662,7 +664,7 @@ def fetch_tmdb_tv(name: str):
         return {
             "tmdb_id": tmdb_id,
             "name": detail.get("name") or m.get("name") or name or "",
-            "o_name": detail.get("original_name") or m.get("original_name") or "",
+            "o_name": detail.get("name") or m.get("original_name") or "",
             "poster": ("https://image.tmdb.org/t/p/w500" + detail["poster_path"]) if detail.get("poster_path") else "",
             "backdrop": ("https://image.tmdb.org/t/p/w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
             "plot": detail.get("overview", "") or "",
@@ -726,7 +728,7 @@ def fetch_tmdb_tv_by_id(tmdb_id: str | int):
         return {
             "tmdb_id": int(tmdb_id),
             "name": detail.get("name") or "",
-            "o_name": detail.get("original_name") or "",
+            "o_name": detail.get("name") or "",
             "poster": ("https://image.tmdb.org/t/p/w500" + detail["poster_path"]) if detail.get("poster_path") else "",
             "backdrop": ("https://image.tmdb.org/t/p/w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
             "plot": detail.get("overview", "") or "",
@@ -2144,7 +2146,7 @@ if ($action === "get_vod_info") {
     "info" => [
       "kinopoisk_url" => (string)($r["kinopoisk_url"] ?? ""),
       "tmdb_id" => (string)($r["tmdb_id"] ?? ""),
-      "name" => (string)$r["title"],
+      "name" => (string)$r["o_name"],
       "o_name" => (string)($r["o_name"] ?? ""),
       "cover_big" => (string)($r["poster"] ?? ""),
       "cover" => (string)($r["poster"] ?? ""),
@@ -2166,7 +2168,7 @@ if ($action === "get_vod_info") {
     ],
     "movie_data" => [
       "stream_id" => (int)$r["id"],
-      "name" => (string)$r["title"],
+      "name" => (string)$r["o_name"],
       "o_name" => (string)($r["o_name"] ?? ""),
       "added" => (string)(filemtime($r["path"] ?? "") ?: time()),
       "category_id" => "1",
@@ -2261,7 +2263,7 @@ if ($action === "get_series") {
 
     $outSeries[] = [
       "num" => $n++,
-      "name" => (string)$r["name"],
+      "name" => (string)$r["o_name"],
       "o_name" => (string)($r["o_name"] ?? ""),
       "cover" => (string)($r["poster"] ?? ""),
       "plot" => (string)($r["plot"] ?? ""),
@@ -2413,7 +2415,7 @@ if ($action === "get_series_info") {
   out([
     "seasons" => $seasons,
     "info" => [
-      "name" => (string)$row["name"],
+      "name" => (string)$row["o_name"],
       "o_name" => (string)($row["o_name"] ?? ""),
       "cover" => (string)($row["poster"] ?? ""),
       "plot" => (string)($row["plot"] ?? ""),
@@ -2885,7 +2887,7 @@ def scan_series_sqlite() -> tuple[int, int]:
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             series_id,
-                            tmdb.get("name", "") or sname,
+                            sname,
                             tmdb.get("o_name", ""),
                             tmdb.get("kinopoisk_url", ""),
                             cat,
@@ -3425,7 +3427,7 @@ def tmdb_movie_info(title: str, year: str | None = None):
     return {{
         "tmdb_id": tmdb_id,
         "name": detail.get("title") or m.get("title") or title or "",
-        "o_name": detail.get("original_title") or m.get("original_title") or "",
+        "o_name": detail.get("title") or m.get("original_title") or "",
         "poster": (TMDB_IMAGE_BASE + detail["poster_path"]) if detail.get("poster_path") else None,
         "backdrop": (TMDB_IMAGE_BASE + detail["backdrop_path"]) if detail.get("backdrop_path") else None,
         "plot": detail.get("overview"),
@@ -3491,7 +3493,7 @@ def tmdb_movie_info_by_id(tmdb_id: str):
     return {{
         "tmdb_id": int(tmdb_id),
         "name": detail.get("title") or "",
-        "o_name": detail.get("original_title") or "",
+        "o_name": detail.get("title") or "",
         "poster": (TMDB_IMAGE_BASE + detail["poster_path"]) if detail.get("poster_path") else "",
         "backdrop": (TMDB_IMAGE_BASE + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
         "plot": detail.get("overview", "") or "",
@@ -3557,7 +3559,7 @@ def tmdb_tv_info(name: str):
     return {{
         "tmdb_id": tmdb_id,
         "name": detail.get("name") or m.get("name") or name or "",
-        "o_name": detail.get("original_name") or m.get("original_name") or "",
+        "o_name": detail.get("name") or m.get("original_name") or "",
         "poster": (TMDB_IMAGE_BASE + detail["poster_path"]) if detail.get("poster_path") else None,
         "backdrop": (TMDB_IMAGE_BASE + detail["backdrop_path"]) if detail.get("backdrop_path") else None,
         "plot": detail.get("overview"),
@@ -3618,7 +3620,7 @@ def fetch_tmdb_tv_by_id(tmdb_id: str | int):
         return {{
             "tmdb_id": int(tmdb_id),
             "name": detail.get("name") or "",
-            "o_name": detail.get("original_name") or "",
+            "o_name": detail.get("name") or "",
             "poster": ("https://image.tmdb.org/t/p/w500" + detail["poster_path"]) if detail.get("poster_path") else "",
             "backdrop": ("https://image.tmdb.org/t/p/w780" + detail["backdrop_path"]) if detail.get("backdrop_path") else "",
             "plot": detail.get("overview", "") or "",
@@ -3680,22 +3682,22 @@ def scan_vod():
 
         entries = sorted(root.iterdir())
 
-        # 1) Direkt Dateien im Root zulassen
-        direct_files = [f for f in entries if f.is_file() and f.suffix.lower() in EXT]
-        for f in direct_files:
-            cat = "Filme"
+        # Dateien direkt im Root => Standard-Kategorie "Filme"
+        for f in entries:
+            if f.is_file() and f.suffix.lower() in EXT:
+                cat = "Filme"
 
-            m2 = re.match(r"^(.*)\((\d{{4}})\)$", f.stem.strip())
-            if m2:
-                title = m2.group(1).strip()
-                year = m2.group(2)
-            else:
-                title = f.stem.strip()
-                year = None
+                m2 = re.match(r"^(.*)\((\d{{4}})\)$", f.stem.strip())
+                if m2:
+                    title = m2.group(1).strip()
+                    year = m2.group(2)
+                else:
+                    title = f.stem.strip()
+                    year = None
 
-            vod.append((title, year, cat, str(f)))
+                vod.append((title, year, cat, str(f)))
 
-        # 2) Zusätzlich weiterhin Unterordner als Kategorien scannen
+        # Unterordner weiterhin als Kategorien behandeln
         for catdir in entries:
             if not catdir.is_dir():
                 continue
@@ -3812,7 +3814,7 @@ def main():
         if info:
             cur.execute(
                 "INSERT INTO series(id,name,o_name,kinopoisk_url,cat,tmdb_id,poster,backdrop,plot,rating,release_date,cast,trailer,director,genre,country) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (sid, info.get("name", "") or name, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""), info.get("country", ""))
+                (sid, name, info.get("o_name", ""), info.get("kinopoisk_url", ""), cat, info["tmdb_id"], info["poster"], info["backdrop"], info["plot"], info["rating"], info["release_date"], info.get("cast", ""), info.get("trailer", ""), info.get("director", ""), info.get("genre", ""), info.get("country", ""))
             )
             tmdb_id = info["tmdb_id"]
         else:
